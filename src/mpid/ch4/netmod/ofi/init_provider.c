@@ -154,6 +154,8 @@ static int find_provider(struct fi_info **prov_out)
              * FI_ATOMICS, etc.) and just add FI_HMEM. Don't overwrite with
              * unfiltered provider caps which may be from a DGRAM variant. */
             hints->caps |= FI_HMEM;
+            /* Remove caps that EFA doesn't support */
+            hints->caps &= ~FI_NAMED_RX_CTX;
             /* Set mr_mode to what EFA requires for HMEM support. */
             hints->domain_attr->mr_mode = FI_MR_LOCAL | FI_MR_VIRT_ADDR |
                 FI_MR_ALLOCATED | FI_MR_PROV_KEY | FI_MR_HMEM;
