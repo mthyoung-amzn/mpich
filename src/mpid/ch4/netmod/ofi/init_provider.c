@@ -147,7 +147,24 @@ static int find_provider(struct fi_info **prov_out)
          */
         mpi_errno = MPIDI_OFI_init_hints(hints);
         hints->fabric_attr->prov_name = MPL_strdup(provname);
-        hints->caps = prov->caps;
+
+#ifdef FI_HMEM
+        if (MPIDI_OFI_ENABLE_HMEM && MPIR_CVAR_ENABLE_GPU) {
+            /* For HMEM, keep the caps from init_hints (which includes FI_TAGGED,
+             * FI_ATOMICS, etc.) and just add FI_HMEM. Don't overwrite with
+             * unfiltered provider caps which may be from a DGRAM variant. */
+            hints->caps |= FI_HMEM;
+            /* Set mr_mode to what EFA requires for HMEM support. */
+            hints->domain_attr->mr_mode = FI_MR_LOCAL | FI_MR_VIRT_ADDR |
+                FI_MR_ALLOCATED | FI_MR_PROV_KEY | FI_MR_HMEM;
+            /* Zero out msg_order since EFA doesn't support any ordering */
+            hints->tx_attr->msg_order = 0;
+            hints->rx_attr->msg_order = 0;
+        } else
+#endif
+        {
+            hints->caps = prov->caps;
+        }
 
 
         /* Now we have the hints with best matched provider, get the new prov_list */
@@ -163,6 +180,7 @@ static int find_provider(struct fi_info **prov_out)
         if (ret || prov_list == NULL) {
             /* relax msg_order */
             hints->tx_attr->msg_order = prov->tx_attr->msg_order;
+            hints->rx_attr->msg_order = prov->rx_attr->msg_order;
             if (MPIR_CVAR_DEBUG_SUMMARY && MPIR_Process.rank == 0) {
                 fprintf(stderr, "fi_getinfo attempt 2 (relaxed msg_order): mode=0x%llx, caps=0x%llx, mr_mode=0x%x, tx_msg_order=0x%llx\n",
                         (unsigned long long) hints->mode, (unsigned long long) hints->caps,
