@@ -242,6 +242,65 @@ int MPIDI_OFI_init_hints(struct fi_info *hints)
     }
 #endif
 
+    /* Debug: dump all hints being passed to fi_getinfo */
+    if (MPIR_Process.rank == 0) {
+        fprintf(stderr, "OFI hints debug: ===== BEGIN HINTS =====\n");
+        fprintf(stderr, "  hints->mode = 0x%llx\n", (unsigned long long) hints->mode);
+        fprintf(stderr, "  hints->caps = 0x%llx\n", (unsigned long long) hints->caps);
+        fprintf(stderr, "    FI_RMA: %s\n", (hints->caps & FI_RMA) ? "yes" : "no");
+        fprintf(stderr, "    FI_READ: %s\n", (hints->caps & FI_READ) ? "yes" : "no");
+        fprintf(stderr, "    FI_WRITE: %s\n", (hints->caps & FI_WRITE) ? "yes" : "no");
+        fprintf(stderr, "    FI_REMOTE_READ: %s\n", (hints->caps & FI_REMOTE_READ) ? "yes" : "no");
+        fprintf(stderr, "    FI_REMOTE_WRITE: %s\n", (hints->caps & FI_REMOTE_WRITE) ? "yes" : "no");
+        fprintf(stderr, "    FI_ATOMICS: %s\n", (hints->caps & FI_ATOMICS) ? "yes" : "no");
+        fprintf(stderr, "    FI_DIRECTED_RECV: %s\n", (hints->caps & FI_DIRECTED_RECV) ? "yes" : "no");
+        fprintf(stderr, "    FI_TAGGED: %s\n", (hints->caps & FI_TAGGED) ? "yes" : "no");
+        fprintf(stderr, "    FI_MSG: %s\n", (hints->caps & FI_MSG) ? "yes" : "no");
+        fprintf(stderr, "    FI_MULTI_RECV: %s\n", (hints->caps & FI_MULTI_RECV) ? "yes" : "no");
+        fprintf(stderr, "    FI_NAMED_RX_CTX: %s\n", (hints->caps & FI_NAMED_RX_CTX) ? "yes" : "no");
+#ifdef FI_HMEM
+        fprintf(stderr, "    FI_HMEM: %s\n", (hints->caps & FI_HMEM) ? "yes" : "no");
+#else
+        fprintf(stderr, "    FI_HMEM: not defined at compile time\n");
+#endif
+        fprintf(stderr, "    FI_TRIGGER: %s\n", (hints->caps & FI_TRIGGER) ? "yes" : "no");
+        fprintf(stderr, "  hints->addr_format = %d\n", (int) hints->addr_format);
+        fprintf(stderr, "  domain_attr->threading = %d\n", (int) hints->domain_attr->threading);
+        fprintf(stderr, "  domain_attr->data_progress = %d\n", (int) hints->domain_attr->data_progress);
+        fprintf(stderr, "  domain_attr->control_progress = %d\n", (int) hints->domain_attr->control_progress);
+        fprintf(stderr, "  domain_attr->resource_mgmt = %d\n", (int) hints->domain_attr->resource_mgmt);
+        fprintf(stderr, "  domain_attr->av_type = %d\n", (int) hints->domain_attr->av_type);
+        fprintf(stderr, "  domain_attr->mr_mode = 0x%x\n", (unsigned) hints->domain_attr->mr_mode);
+#ifdef FI_MR_VIRT_ADDR
+        fprintf(stderr, "    FI_MR_VIRT_ADDR: %s\n", (hints->domain_attr->mr_mode & FI_MR_VIRT_ADDR) ? "yes" : "no");
+#endif
+#ifdef FI_MR_ALLOCATED
+        fprintf(stderr, "    FI_MR_ALLOCATED: %s\n", (hints->domain_attr->mr_mode & FI_MR_ALLOCATED) ? "yes" : "no");
+#endif
+#ifdef FI_MR_PROV_KEY
+        fprintf(stderr, "    FI_MR_PROV_KEY: %s\n", (hints->domain_attr->mr_mode & FI_MR_PROV_KEY) ? "yes" : "no");
+#endif
+#ifdef FI_MR_HMEM
+        fprintf(stderr, "    FI_MR_HMEM: %s\n", (hints->domain_attr->mr_mode & FI_MR_HMEM) ? "yes" : "no");
+#endif
+#ifdef FI_MR_ENDPOINT
+        fprintf(stderr, "    FI_MR_ENDPOINT: %s\n", (hints->domain_attr->mr_mode & FI_MR_ENDPOINT) ? "yes" : "no");
+#endif
+        fprintf(stderr, "  domain_attr->cq_data_size = %zu\n", hints->domain_attr->cq_data_size);
+        fprintf(stderr, "  tx_attr->op_flags = 0x%llx\n", (unsigned long long) hints->tx_attr->op_flags);
+        fprintf(stderr, "    FI_COMPLETION: %s\n", (hints->tx_attr->op_flags & FI_COMPLETION) ? "yes" : "no");
+        fprintf(stderr, "    FI_DELIVERY_COMPLETE: %s\n", (hints->tx_attr->op_flags & FI_DELIVERY_COMPLETE) ? "yes" : "no");
+        fprintf(stderr, "  tx_attr->msg_order = 0x%llx\n", (unsigned long long) hints->tx_attr->msg_order);
+        fprintf(stderr, "  rx_attr->msg_order = 0x%llx\n", (unsigned long long) hints->rx_attr->msg_order);
+        fprintf(stderr, "  rx_attr->op_flags = 0x%llx\n", (unsigned long long) hints->rx_attr->op_flags);
+        fprintf(stderr, "  rx_attr->total_buffered_recv = %zu\n", hints->rx_attr->total_buffered_recv);
+        fprintf(stderr, "  ep_attr->type = %d (FI_EP_RDM=%d)\n", (int) hints->ep_attr->type, (int) FI_EP_RDM);
+        fprintf(stderr, "  ep_attr->mem_tag_format = 0x%llx\n", (unsigned long long) hints->ep_attr->mem_tag_format);
+        fprintf(stderr, "  MPIDI_OFI_ENABLE_HMEM = %d\n", MPIDI_OFI_ENABLE_HMEM);
+        fprintf(stderr, "  MPIR_CVAR_ENABLE_GPU = %d\n", MPIR_CVAR_ENABLE_GPU);
+        fprintf(stderr, "OFI hints debug: ===== END HINTS =====\n");
+    }
+
   fn_fail:
     return mpi_errno;
 }

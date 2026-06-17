@@ -154,16 +154,35 @@ static int find_provider(struct fi_info **prov_out)
         struct fi_info *old_prov_list = prov_list;
 
         /* First try with the initial (optimal) hints */
+        if (MPIR_CVAR_DEBUG_SUMMARY && MPIR_Process.rank == 0) {
+            fprintf(stderr, "fi_getinfo attempt 1: mode=0x%llx, caps=0x%llx, mr_mode=0x%x\n",
+                    (unsigned long long) hints->mode, (unsigned long long) hints->caps,
+                    (unsigned) hints->domain_attr->mr_mode);
+        }
         ret = fi_getinfo(required_version, NULL, NULL, 0ULL, hints, &prov_list);
         if (ret || prov_list == NULL) {
             /* relax msg_order */
             hints->tx_attr->msg_order = prov->tx_attr->msg_order;
+            if (MPIR_CVAR_DEBUG_SUMMARY && MPIR_Process.rank == 0) {
+                fprintf(stderr, "fi_getinfo attempt 2 (relaxed msg_order): mode=0x%llx, caps=0x%llx, mr_mode=0x%x, tx_msg_order=0x%llx\n",
+                        (unsigned long long) hints->mode, (unsigned long long) hints->caps,
+                        (unsigned) hints->domain_attr->mr_mode,
+                        (unsigned long long) hints->tx_attr->msg_order);
+            }
             ret = fi_getinfo(required_version, NULL, NULL, 0ULL, hints, &prov_list);
         }
         if (ret || prov_list == NULL) {
             /* relax mr_mode */
             hints->domain_attr->mr_mode = prov->domain_attr->mr_mode;
+            if (MPIR_CVAR_DEBUG_SUMMARY && MPIR_Process.rank == 0) {
+                fprintf(stderr, "fi_getinfo attempt 3 (relaxed mr_mode): mode=0x%llx, caps=0x%llx, mr_mode=0x%x\n",
+                        (unsigned long long) hints->mode, (unsigned long long) hints->caps,
+                        (unsigned) hints->domain_attr->mr_mode);
+            }
             ret = fi_getinfo(required_version, NULL, NULL, 0ULL, hints, &prov_list);
+        }
+        if (MPIR_CVAR_DEBUG_SUMMARY && MPIR_Process.rank == 0) {
+            fprintf(stderr, "fi_getinfo result: ret=%d, prov_list=%p\n", ret, (void *) prov_list);
         }
         /* free the old one, the new one will be freed in MPIDI_OFI_find_provider_cleanup */
         fi_freeinfo(old_prov_list);
