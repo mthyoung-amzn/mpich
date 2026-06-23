@@ -15,10 +15,6 @@
 # is a separate package
 Makefile.in
 Makefile
-*.in
-
-# compilation database
-compile_commands.json
 
 # a lot of generic patterns for generated files
 *-cache
