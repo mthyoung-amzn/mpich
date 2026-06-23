@@ -148,6 +148,12 @@ static int find_provider(struct fi_info **prov_out)
         mpi_errno = MPIDI_OFI_init_hints(hints);
         hints->fabric_attr->prov_name = MPL_strdup(provname);
         hints->caps = prov->caps;
+#ifdef FI_HMEM
+        if (!MPIDI_OFI_ENABLE_HMEM || !MPIR_CVAR_ENABLE_GPU) {
+            hints->caps &= ~FI_HMEM;
+            hints->domain_attr->mr_mode &= ~FI_MR_HMEM;
+        }
+#endif
 
 
         /* Now we have the hints with best matched provider, get the new prov_list */
