@@ -166,7 +166,7 @@ int MPIDI_OFI_init_hints(struct fi_info *hints)
 
 #ifdef FI_MR_HMEM
         if (MPIDI_OFI_ENABLE_HMEM) {
-            hints->domain_attr->mr_mode |= FI_MR_HMEM;
+            hints->domain_attr->mr_mode |= FI_MR_HMEM | FI_MR_LOCAL;
         }
 #endif
 
