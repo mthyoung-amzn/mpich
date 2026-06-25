@@ -804,6 +804,15 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_OFI_register_memory_and_bind(char *send_buf, 
 
     MPIR_FUNC_ENTER;
 
+    /* Simple single-entry cache to avoid repeated registration of the same buffer */
+    static char *cached_buf = NULL;
+    static size_t cached_sz = 0;
+    static struct fid_mr *cached_mr = NULL;
+    if (send_buf == cached_buf && data_sz == cached_sz && cached_mr != NULL) {
+        *mr = cached_mr;
+        goto fn_exit;
+    }
+
     mpi_errno = MPIDI_OFI_register_memory(send_buf, data_sz, attr, ctx_idx, 0, mr);
     MPIR_ERR_CHECK(mpi_errno);
 
@@ -818,6 +827,11 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_OFI_register_memory_and_bind(char *send_buf, 
                              "GPU RDMA MR alloc");
         new_mr->mr = *mr;
         DL_APPEND(MPIDI_OFI_global.gdr_mrs, new_mr);
+
+        /* Update single-entry cache */
+        cached_buf = send_buf;
+        cached_sz = data_sz;
+        cached_mr = *mr;
     }
 
   fn_exit:
