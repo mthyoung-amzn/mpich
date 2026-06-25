@@ -804,6 +804,28 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_OFI_register_memory_and_bind(char *send_buf, 
 
     MPIR_FUNC_ENTER;
 
+    /* Single-entry cache: hit if requested range falls within cached range */
+    static char *cached_buf = NULL;
+    static size_t cached_sz = 0;
+    static struct fid_mr *cached_mr = NULL;
+    if (cached_mr != NULL &&
+        send_buf >= cached_buf &&
+        (send_buf + data_sz) <= (cached_buf + cached_sz)) {
+        *mr = cached_mr;
+        goto fn_exit;
+    }
+
+    /* If the new range is adjacent/overlapping with cached range on the same
+     * allocation, deregister old MR and register the combined range */
+    if (cached_mr != NULL) {
+        char *new_start = (send_buf < cached_buf) ? send_buf : cached_buf;
+        char *new_end_a = cached_buf + cached_sz;
+        char *new_end_b = send_buf + data_sz;
+        char *new_end = (new_end_a > new_end_b) ? new_end_a : new_end_b;
+        send_buf = new_start;
+        data_sz = new_end - new_start;
+    }
+
     mpi_errno = MPIDI_OFI_register_memory(send_buf, data_sz, attr, ctx_idx, 0, mr);
     MPIR_ERR_CHECK(mpi_errno);
 
@@ -818,6 +840,11 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_OFI_register_memory_and_bind(char *send_buf, 
                              "GPU RDMA MR alloc");
         new_mr->mr = *mr;
         DL_APPEND(MPIDI_OFI_global.gdr_mrs, new_mr);
+
+        /* Update single-entry cache */
+        cached_buf = send_buf;
+        cached_sz = data_sz;
+        cached_mr = *mr;
     }
 
   fn_exit:
