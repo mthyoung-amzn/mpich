@@ -104,17 +104,8 @@ static void get_chunk_offsets(MPI_Aint chunk_index, int num_nics, MPI_Aint chunk
     } else {
         int nic = chunk_index % num_nics;
         MPI_Aint nic_chunk_index = chunk_index / chunks_per_nic;
-        *nic_out = nic;
         *total_offset_out = (nic * chunks_per_nic + nic_chunk_index) * chunk_sz;
         *nic_offset_out = nic_chunk_index * chunk_sz;
-    }
-    {
-        static int debug_count2 = 0;
-        if (debug_count2 < 16) {
-            fprintf(stderr, "[DEBUG] get_chunk_offsets: chunk_index=%ld, num_nics=%d, chunks_per_nic=%ld, nic_out=%d\n",
-                    (long)chunk_index, num_nics, (long)chunks_per_nic, *nic_out);
-            debug_count2++;
-        }
     }
     if (*total_offset_out + chunk_sz < data_sz) {
         *chunk_sz_out = chunk_sz;
