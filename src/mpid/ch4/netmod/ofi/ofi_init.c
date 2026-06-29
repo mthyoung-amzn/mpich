@@ -1212,6 +1212,12 @@ static int create_vci_domain(struct fid_domain **p_domain, struct fid_av **p_av,
 
     /* ---- domain ---- */
     struct fid_domain *domain;
+    fprintf(stderr, "[DEBUG] create_vci_domain: nic=%d, domain_name=%s, fabric_name=%s\n",
+            nic,
+            MPIDI_OFI_global.prov_use[nic]->domain_attr->name ?
+                MPIDI_OFI_global.prov_use[nic]->domain_attr->name : "(nil)",
+            MPIDI_OFI_global.prov_use[nic]->fabric_attr->prov_name ?
+                MPIDI_OFI_global.prov_use[nic]->fabric_attr->prov_name : "(nil)");
     MPIDI_OFI_CALL(fi_domain(MPIDI_OFI_global.fabric, MPIDI_OFI_global.prov_use[nic], &domain,
                              NULL), opendomain);
     *p_domain = domain;
