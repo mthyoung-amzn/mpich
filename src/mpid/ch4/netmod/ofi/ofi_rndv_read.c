@@ -251,8 +251,8 @@ static int recv_issue_read(MPIR_Request * parent_request, int event_id,
     {
         static int debug_count = 0;
         if (debug_count < 32) {
-            fprintf(stderr, "[DEBUG] fi_read: nic=%d, ctx_idx=%d, vci=%d, data_sz=%ld, global_num_nics=%d\n",
-                    nic, ctx_idx, vci_local, (long)data_sz, MPIDI_OFI_global.num_nics);
+            fprintf(stderr, "[DEBUG] fi_read: nic=%d, ctx_idx=%d, vci=%d, data_sz=%ld\n",
+                    nic, ctx_idx, vci_local, (long)data_sz);
             debug_count++;
         }
     }
