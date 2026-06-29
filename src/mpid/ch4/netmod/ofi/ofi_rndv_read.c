@@ -248,15 +248,6 @@ static int recv_issue_read(MPIR_Request * parent_request, int event_id,
     int ctx_idx = MPIDI_OFI_get_ctx_index(vci_local, nic);
     fi_addr_t addr = MPIDI_OFI_av_to_phys(av, vci_local, nic, vci_remote, nic);
 
-    {
-        static int debug_count = 0;
-        if (debug_count < 32) {
-            fprintf(stderr, "[DEBUG] fi_read: nic=%d, ctx_idx=%d, vci=%d, data_sz=%ld\n",
-                    nic, ctx_idx, vci_local, (long)data_sz);
-            debug_count++;
-        }
-    }
-
     MPIDI_OFI_CALL_RETRY(fi_read(MPIDI_OFI_global.ctx[ctx_idx].tx,
                                  buf, data_sz, NULL,
                                  addr, remote_disp, rkey, (void *) &r->context),
