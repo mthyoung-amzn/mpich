@@ -1223,7 +1223,8 @@ static int create_vci_domain(struct fid_domain **p_domain, struct fid_av **p_av,
      * Otherwise, set MPIDI_OFI_global.got_named_av and
      * copy the map_addr.
      */
-    if (MPIR_CVAR_CH4_OFI_ENABLE_SHARED_AV && nic == 0 && try_open_shared_av(domain, p_av)) {
+    if (MPIR_CVAR_CH4_OFI_ENABLE_SHARED_AV && nic == 0 &&
+        MPIDI_OFI_global.num_nics_available <= 1 && try_open_shared_av(domain, p_av)) {
         MPIDI_OFI_global.got_named_av = 1;
     } else {
         mpi_errno = open_local_av(domain, p_av);
