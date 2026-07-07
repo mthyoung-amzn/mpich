@@ -1378,8 +1378,8 @@ static int open_local_av(struct fid_domain *p_domain, struct fid_av **p_av)
         av_attr.type = FI_AV_MAP;
     }
     av_attr.rx_ctx_bits = MPIDI_OFI_MAX_ENDPOINTS_BITS;
-    /* Need room for all remote endpoints: size * num_nics * num_vcis */
-    av_attr.count = MPIR_Process.size * MPIDI_OFI_global.num_nics_available;
+    /* Need room for all remote endpoints on root AV; other AVs only need size entries */
+    av_attr.count = MPIR_Process.size;
     fprintf(stderr, "[DEBUG] open_local_av: count=%zu (size=%d, nics_avail=%d)\n",
             av_attr.count, MPIR_Process.size, MPIDI_OFI_global.num_nics_available);
 

@@ -378,6 +378,18 @@ static int setup_multi_nic(int nic_count)
         num_close_nics = nic_count;
     }
 
+    /* DEBUG: print NIC assignment info */
+    if (MPIR_CVAR_DEBUG_SUMMARY >= 2) {
+        fprintf(stderr, "[DEBUG] NIC affinity: rank=%d, local_rank=%d, nic_count=%d, "
+                "num_close_nics=%d, num_nics=%d\n",
+                MPIR_Process.rank, local_rank, nic_count, num_close_nics, num_nics);
+        for (int i = 0; i < nic_count; i++) {
+            fprintf(stderr, "[DEBUG]   nic[%d]: %s, close=%d, parent=%ld\n",
+                    i, nics[i].nic->domain_attr->name, nics[i].close,
+                    (long)nics[i].parent);
+        }
+    }
+
     if (pref_nic_set) {
         /* When using this CVAR, the rank can only use 1 NIC. We do not reset num_close_nics again
          * in case a NIC is down and it needs to use another NIC. */
