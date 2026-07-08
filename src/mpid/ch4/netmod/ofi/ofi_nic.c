@@ -380,9 +380,10 @@ static int setup_multi_nic(int nic_count)
 
     /* DEBUG: print NIC assignment info */
     if (MPIR_CVAR_DEBUG_SUMMARY >= 2) {
-        fprintf(stderr, "[DEBUG] NIC affinity: rank=%d, local_rank=%d, nic_count=%d, "
+        fprintf(stderr, "[DEBUG] NIC affinity: rank=%d, local_rank=%d, package_rank=%d, nic_count=%d, "
                 "num_close_nics=%d, num_nics=%d\n",
-                MPIR_Process.rank, local_rank, nic_count, num_close_nics, num_nics);
+                MPIR_Process.rank, local_rank, MPIR_Process.package_rank,
+                nic_count, num_close_nics, num_nics);
         for (int i = 0; i < nic_count; i++) {
             fprintf(stderr, "[DEBUG]   nic[%d]: %s, close=%d, parent=%ld\n",
                     i, nics[i].nic->domain_attr->name, nics[i].close,
@@ -411,10 +412,10 @@ static int setup_multi_nic(int nic_count)
             qsort(nics, nic_count, sizeof(nics[0]), compare_nics);
         }
 
-        /* Because we cannot communicate with the other local processes to avoid collisions with the
-         * same NICs, just shift NICs that have multiple close NICs around according to their local
-         * rank. This will likely give the same result as long as processes have been bound properly. */
-        int old_idx = (num_close_nics == 0) ? 0 : local_rank % num_close_nics;
+        /* Distribute ranks across close NICs using package_rank (rank's index among
+         * local procs on the same NUMA/package). This ensures even distribution regardless
+         * of whether ranks are placed sequentially or interleaved across NUMA nodes. */
+        int old_idx = (num_close_nics == 0) ? 0 : MPIR_Process.package_rank % num_close_nics;
 
         if (old_idx != 0) {
             MPIDI_OFI_nic_info_t *old_nics;

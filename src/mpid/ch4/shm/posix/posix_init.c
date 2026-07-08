@@ -215,6 +215,32 @@ int MPIDI_POSIX_init_local(int *tag_bits /* unused */)
         init_topo_info();
     }
 
+    /* Compute package_rank: rank's index among local procs on same NUMA node.
+     * This is needed by OFI multi-NIC to distribute ranks across NUMA-local NICs. */
+    MPIR_Process.package_rank = MPIR_Process.local_rank;  /* fallback */
+    if (MPIR_Process.local_size > 1 && MPIDI_POSIX_global.topo.numa_id >= 0) {
+        if (!init_shm_initialized) {
+            mpi_errno = MPIDU_Init_shm_init();
+            MPIR_ERR_CHECK(mpi_errno);
+            init_shm_initialized = true;
+        }
+        int my_numa_id = MPIDI_POSIX_global.topo.numa_id;
+        MPIDU_Init_shm_put(&my_numa_id, sizeof(int));
+        MPIDU_Init_shm_barrier();
+
+        int package_rank = 0;
+        for (i = 0; i < MPIR_Process.local_rank; i++) {
+            int peer_numa_id;
+            MPIDU_Init_shm_get(i, sizeof(int), &peer_numa_id);
+            if (peer_numa_id == my_numa_id) {
+                package_rank++;
+            }
+        }
+        MPIR_Process.package_rank = package_rank;
+
+        MPIDU_Init_shm_barrier();
+    }
+
     choose_posix_eager();
 
     mpi_errno = posix_coll_init();
