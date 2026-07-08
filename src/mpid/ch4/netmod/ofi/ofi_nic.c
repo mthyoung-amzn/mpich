@@ -406,6 +406,7 @@ static int setup_multi_nic(int nic_count)
          * A stride coprime to num_close_nics ensures all NICs are covered while
          * alternating between bridge groups. */
         int old_idx = 0;
+        bool explicit_mapping = false;
         char *nic_mapping = getenv("MPIR_CVAR_CH4_OFI_NIC_MAPPING");
         if (nic_mapping) {
             /* Explicit per-local_rank NIC name mapping: comma-separated list of domain names.
@@ -420,10 +421,14 @@ static int setup_multi_nic(int nic_count)
             if (tok) {
                 char *end = strchr(tok, ',');
                 if (end) *end = '\0';
-                /* Find the NIC with this name and swap it to position 0 */
                 for (int n = 0; n < nic_count; n++) {
                     if (strcmp(nics[n].nic->domain_attr->name, tok) == 0) {
-                        old_idx = n;
+                        if (n != 0) {
+                            MPIDI_OFI_nic_info_t tmp = nics[0];
+                            nics[0] = nics[n];
+                            nics[n] = tmp;
+                        }
+                        explicit_mapping = true;
                         break;
                     }
                 }
@@ -434,7 +439,7 @@ static int setup_multi_nic(int nic_count)
             old_idx = (MPIR_Process.package_rank * stride) % num_close_nics;
         }
 
-        if (old_idx != 0) {
+        if (!explicit_mapping && old_idx != 0) {
             MPIDI_OFI_nic_info_t *old_nics;
             MPIR_CHKLMEM_MALLOC(old_nics, sizeof(MPIDI_OFI_nic_info_t) * nic_count);
             memcpy(old_nics, nics, sizeof(MPIDI_OFI_nic_info_t) * nic_count);
