@@ -405,9 +405,34 @@ static int setup_multi_nic(int nic_count)
          * With NICs sorted by name, consecutive indices tend to be on the same bridge.
          * A stride coprime to num_close_nics ensures all NICs are covered while
          * alternating between bridge groups. */
-        int stride = (num_close_nics > 2) ? (num_close_nics / 2 + 1) : 1;
-        int old_idx = (num_close_nics == 0) ? 0 :
-            (MPIR_Process.package_rank * stride) % num_close_nics;
+        int old_idx = 0;
+        char *nic_mapping = getenv("MPIR_CVAR_CH4_OFI_NIC_MAPPING");
+        if (nic_mapping) {
+            /* Explicit per-local_rank NIC name mapping: comma-separated list of domain names.
+             * Entry at position local_rank determines the NIC for that rank.
+             * Example: "rdmap110s0-rdm,rdmap85s0-rdm,rdmap111s0-rdm,rdmap86s0-rdm,..." */
+            char *map = MPL_strdup(nic_mapping);
+            char *tok = map;
+            for (int r = 0; r < local_rank && tok; r++) {
+                tok = strchr(tok, ',');
+                if (tok) tok++;
+            }
+            if (tok) {
+                char *end = strchr(tok, ',');
+                if (end) *end = '\0';
+                /* Find the NIC with this name and swap it to position 0 */
+                for (int n = 0; n < nic_count; n++) {
+                    if (strcmp(nics[n].nic->domain_attr->name, tok) == 0) {
+                        old_idx = n;
+                        break;
+                    }
+                }
+            }
+            MPL_free(map);
+        } else if (num_close_nics > 0) {
+            int stride = (num_close_nics > 2) ? (num_close_nics / 2 + 1) : 1;
+            old_idx = (MPIR_Process.package_rank * stride) % num_close_nics;
+        }
 
         if (old_idx != 0) {
             MPIDI_OFI_nic_info_t *old_nics;
