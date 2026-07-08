@@ -219,26 +219,31 @@ int MPIDI_POSIX_init_local(int *tag_bits /* unused */)
      * This is needed by OFI multi-NIC to distribute ranks across NUMA-local NICs. */
     MPIR_Process.package_rank = MPIR_Process.local_rank;  /* fallback */
     if (MPIR_Process.local_size > 1 && MPIDI_POSIX_global.topo.numa_id >= 0) {
-        if (!init_shm_initialized) {
-            mpi_errno = MPIDU_Init_shm_init();
-            MPIR_ERR_CHECK(mpi_errno);
-            init_shm_initialized = true;
-        }
-        int my_numa_id = MPIDI_POSIX_global.topo.numa_id;
-        MPIDU_Init_shm_put(&my_numa_id, sizeof(int));
-        MPIDU_Init_shm_barrier();
+        int local_size = MPIR_Process.local_size;
+        size_t shm_size = local_size * sizeof(int);
+        char shm_name[128];
+        unsigned world_id = MPIR_Process.world_id;
+        int node_id = MPIR_Process.node_map[MPIR_Process.rank];
+        snprintf(shm_name, sizeof(shm_name), "/mpich_numa_%x_%d", world_id, node_id);
 
-        int package_rank = 0;
-        for (i = 0; i < MPIR_Process.local_rank; i++) {
-            int peer_numa_id;
-            MPIDU_Init_shm_get(i, sizeof(int), &peer_numa_id);
-            if (peer_numa_id == my_numa_id) {
-                package_rank++;
+        bool is_root;
+        int *numa_ids = (int *) MPL_initshm_open(shm_name, shm_size, &is_root);
+        if (numa_ids) {
+            numa_ids[MPIR_Process.local_rank] = MPIDI_POSIX_global.topo.numa_id;
+
+            MPIR_pmi_barrier_local();
+
+            int package_rank = 0;
+            for (i = 0; i < MPIR_Process.local_rank; i++) {
+                if (numa_ids[i] == MPIDI_POSIX_global.topo.numa_id) {
+                    package_rank++;
+                }
             }
-        }
-        MPIR_Process.package_rank = package_rank;
+            MPIR_Process.package_rank = package_rank;
 
-        MPIDU_Init_shm_barrier();
+            MPIR_pmi_barrier_local();
+            MPL_initshm_free(shm_name, numa_ids, shm_size, true);
+        }
     }
 
     choose_posix_eager();
