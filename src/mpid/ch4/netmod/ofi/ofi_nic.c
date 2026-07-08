@@ -380,15 +380,13 @@ static int setup_multi_nic(int nic_count)
 
     /* DEBUG: print NIC assignment info */
     if (MPIR_CVAR_DEBUG_SUMMARY >= 2) {
-        fprintf(stderr, "[DEBUG] NIC affinity: rank=%d, local_rank=%d, package_rank=%d, nic_count=%d, "
-                "num_close_nics=%d, num_nics=%d\n",
+        MPIR_hwtopo_gid_t numa_gid = MPIR_hwtopo_get_obj_by_type(MPIR_HWTOPO_TYPE__DDR);
+        int numa_id = MPIR_hwtopo_get_lid(numa_gid);
+        fprintf(stderr, "[NIC] rank=%d local_rank=%d pkg_rank=%d numa=%d "
+                "close_nics=%d assigned=%s\n",
                 MPIR_Process.rank, local_rank, MPIR_Process.package_rank,
-                nic_count, num_close_nics, num_nics);
-        for (int i = 0; i < nic_count; i++) {
-            fprintf(stderr, "[DEBUG]   nic[%d]: %s, close=%d, parent=%ld\n",
-                    i, nics[i].nic->domain_attr->name, nics[i].close,
-                    (long)nics[i].parent);
-        }
+                numa_id, num_close_nics,
+                nics[0].nic->domain_attr->name);
     }
 
     if (pref_nic_set) {
