@@ -400,10 +400,14 @@ static int setup_multi_nic(int nic_count)
             qsort(nics, nic_count, sizeof(nics[0]), compare_nics);
         }
 
-        /* Distribute ranks across close NICs using package_rank (rank's index among
-         * local procs on the same NUMA/package). This ensures even distribution regardless
-         * of whether ranks are placed sequentially or interleaved across NUMA nodes. */
-        int old_idx = (num_close_nics == 0) ? 0 : MPIR_Process.package_rank % num_close_nics;
+        /* Distribute ranks across close NICs using package_rank. Use a stride that
+         * spreads assignments across different PCIe root complexes (HostBridges).
+         * With NICs sorted by name, consecutive indices tend to be on the same bridge.
+         * A stride coprime to num_close_nics ensures all NICs are covered while
+         * alternating between bridge groups. */
+        int stride = (num_close_nics > 2) ? (num_close_nics / 2 + 1) : 1;
+        int old_idx = (num_close_nics == 0) ? 0 :
+            (MPIR_Process.package_rank * stride) % num_close_nics;
 
         if (old_idx != 0) {
             MPIDI_OFI_nic_info_t *old_nics;
