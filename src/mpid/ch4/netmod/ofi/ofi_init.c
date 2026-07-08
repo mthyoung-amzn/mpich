@@ -698,7 +698,6 @@ int MPIDI_OFI_init_local(int *tag_bits)
             fprintf(stdout, "====== Rank to NIC assignment ========\n");
         }
     }
-    }
 
     /* Finally open the fabric */
     MPIDI_OFI_CALL(fi_fabric(MPIDI_OFI_global.prov_use[0]->fabric_attr,
