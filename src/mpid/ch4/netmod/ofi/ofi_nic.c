@@ -7,6 +7,7 @@
 #include "ofi_impl.h"
 #include "ofi_init.h"
 #include "mpir_hwtopo.h"
+#include <sched.h>
 
 /*
 === BEGIN_MPI_T_CVAR_INFO_BLOCK ===
@@ -378,17 +379,6 @@ static int setup_multi_nic(int nic_count)
         num_close_nics = nic_count;
     }
 
-    /* DEBUG: print NIC assignment info */
-    if (MPIR_CVAR_DEBUG_SUMMARY >= 2) {
-        MPIR_hwtopo_gid_t numa_gid = MPIR_hwtopo_get_obj_by_type(MPIR_HWTOPO_TYPE__DDR);
-        int numa_id = MPIR_hwtopo_get_lid(numa_gid);
-        fprintf(stderr, "[NIC] rank=%d local_rank=%d pkg_rank=%d numa=%d "
-                "close_nics=%d assigned=%s\n",
-                MPIR_Process.rank, local_rank, MPIR_Process.package_rank,
-                numa_id, num_close_nics,
-                nics[0].nic->domain_attr->name);
-    }
-
     if (pref_nic_set) {
         /* When using this CVAR, the rank can only use 1 NIC. We do not reset num_close_nics again
          * in case a NIC is down and it needs to use another NIC. */
@@ -434,6 +424,18 @@ static int setup_multi_nic(int nic_count)
     /* Reorder the prov_use array based on nic_info array */
     for (int i = 0; i < nic_count; ++i) {
         MPIDI_OFI_global.prov_use[i] = nics[i].nic;
+    }
+
+    /* DEBUG: print NIC assignment after rotation */
+    if (MPIR_CVAR_DEBUG_SUMMARY >= 2) {
+        MPIR_hwtopo_gid_t numa_gid = MPIR_hwtopo_get_obj_by_type(MPIR_HWTOPO_TYPE__DDR);
+        int numa_id = MPIR_hwtopo_get_lid(numa_gid);
+        int cpu = sched_getcpu();
+        fprintf(stderr, "[NIC] rank=%d local_rank=%d pkg_rank=%d numa=%d cpu=%d "
+                "close_nics=%d assigned=%s\n",
+                MPIR_Process.rank, local_rank, MPIR_Process.package_rank,
+                numa_id, cpu, num_close_nics,
+                nics[0].nic->domain_attr->name);
     }
 
     /* Set globals */
