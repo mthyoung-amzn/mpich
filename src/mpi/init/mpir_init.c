@@ -208,6 +208,24 @@ int MPII_Init_thread(int *argc, char ***argv, int user_required, int *provided,
     MPII_init_binding_cxx();
 
     /* gpu init must come after pmi to avoid spamming debug messages */
+    /* Apply explicit GPU mapping if provided */
+    {
+        char *gpu_mapping = getenv("MPIR_CVAR_GPU_MAPPING");
+        if (gpu_mapping) {
+            char *map = MPL_strdup(gpu_mapping);
+            char *tok = map;
+            for (int r = 0; r < MPIR_Process.local_rank && tok; r++) {
+                tok = strchr(tok, ',');
+                if (tok) tok++;
+            }
+            if (tok) {
+                char *end = strchr(tok, ',');
+                if (end) *end = '\0';
+                setenv("CUDA_VISIBLE_DEVICES", tok, 1);
+            }
+            MPL_free(map);
+        }
+    }
     mpi_errno = MPII_init_gpu();
     MPIR_ERR_CHECK(mpi_errno);
 

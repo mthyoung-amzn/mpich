@@ -337,19 +337,6 @@ static int addr_exchange_all_ctx(MPIR_Comm * comm, MPIDI_num_vci_t * all_num_vci
                             if (root_offset == 0) {
                                 root_offset = addr - expect_addr;
                             } else {
-                                if (addr != expect_addr + root_offset) {
-                                    char *bad_name = r_names + (vci * num_nics + nic) * name_len;
-                                    int all_zero = 1;
-                                    for (int b = 0; b < name_len; b++) {
-                                        if (bad_name[b] != 0) { all_zero = 0; break; }
-                                    }
-                                    fprintf(stderr, "[DEBUG] AV mismatch: r=%d, nic=%d, vci=%d, "
-                                            "nic_local=%d, vci_local=%d, addr=%ld, expect=%ld, "
-                                            "offset=%ld, name_zero=%d, ctx_idx=%d\n",
-                                            r, nic, vci, nic_local, vci_local,
-                                            (long)addr, (long)expect_addr, (long)root_offset,
-                                            all_zero, ctx_idx);
-                                }
                                 MPIR_Assert(addr == expect_addr + root_offset);
                             }
                         } else {
