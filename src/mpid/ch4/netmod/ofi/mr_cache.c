@@ -234,13 +234,6 @@ int MPIDI_OFI_register_memory_and_bind(char *buf, size_t data_sz,
         }
     }
 
-    /* Periodic diagnostic output */
-    if ((mr_cache_hits + mr_cache_misses) % 1000 == 0 && MPIR_CVAR_DEBUG_SUMMARY >= 2) {
-        fprintf(stderr, "[MR_CACHE] rank=%d hits=%llu misses=%llu evictions=%llu count=%d\n",
-                MPIR_Process.rank, mr_cache_hits, mr_cache_misses, mr_cache_evictions,
-                mr_cache_count);
-    }
-
   fn_exit:
     return mpi_errno;
   fn_fail:
@@ -284,6 +277,12 @@ int MPIDI_OFI_mr_complete(struct fid_mr *mr, bool keep_cache)
 int MPIDI_OFI_mr_cache_finalize(void)
 {
     int mpi_errno = MPI_SUCCESS;
+
+    if (MPIR_CVAR_DEBUG_SUMMARY >= 2 && (mr_cache_hits + mr_cache_misses) > 0) {
+        fprintf(stderr, "[MR_CACHE] rank=%d hits=%llu misses=%llu evictions=%llu count=%d\n",
+                MPIR_Process.rank, mr_cache_hits, mr_cache_misses, mr_cache_evictions,
+                mr_cache_count);
+    }
 
     for (int i = 0; i < mr_cache_count; i++) {
         mpi_errno = mr_cache_free(i);
