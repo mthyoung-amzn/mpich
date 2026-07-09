@@ -51,6 +51,11 @@ static int mr_cache_count = 0;
 
 static unsigned long long mr_cache_usage_counter;       /* for tracking LRU (Least Recently Used) */
 
+/* diagnostics */
+static unsigned long long mr_cache_hits = 0;
+static unsigned long long mr_cache_misses = 0;
+static unsigned long long mr_cache_evictions = 0;
+
 /* ipc handle cache utilities */
 static int mr_cache_free(int idx);
 static int mr_cache_delete(int idx);
@@ -151,6 +156,7 @@ static int mr_cache_check_limit(void)
         }
 
         if (min_idx != -1) {
+            mr_cache_evictions++;
             mpi_errno = mr_cache_delete(min_idx);
         }
     }
@@ -212,7 +218,9 @@ int MPIDI_OFI_register_memory_and_bind(char *buf, size_t data_sz,
     struct mr_cache_entry *entry = mr_cache_search(bounds_base, bounds_len, buffer_id, ctx_idx);
     if (entry) {
         *mr = entry->mr;
+        mr_cache_hits++;
     } else {
+        mr_cache_misses++;
         mpi_errno = MPIDI_OFI_register_memory(bounds_base, bounds_len, attr, ctx_idx, 0, mr);
         MPIR_ERR_CHECK(mpi_errno);
 
@@ -224,6 +232,13 @@ int MPIDI_OFI_register_memory_and_bind(char *buf, size_t data_sz,
             mpi_errno = mr_cache_insert(bounds_base, bounds_len, buffer_id, ctx_idx, *mr);
             MPIR_ERR_CHECK(mpi_errno);
         }
+    }
+
+    /* Periodic diagnostic output */
+    if ((mr_cache_hits + mr_cache_misses) % 1000 == 0 && MPIR_CVAR_DEBUG_SUMMARY >= 2) {
+        fprintf(stderr, "[MR_CACHE] rank=%d hits=%llu misses=%llu evictions=%llu count=%d\n",
+                MPIR_Process.rank, mr_cache_hits, mr_cache_misses, mr_cache_evictions,
+                mr_cache_count);
     }
 
   fn_exit:
