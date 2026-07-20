@@ -24,13 +24,29 @@ cvars:
 */
 
 /* ---------------------------------- */
+/* NIC affinity mask type and macros  */
+/* ---------------------------------- */
+
+#define MPIDI_OFI_NIC_MASK_WORDS (MPIDI_OFI_MAX_NICS / 64)
+
+typedef struct {
+    uint64_t bits[MPIDI_OFI_NIC_MASK_WORDS];
+} MPIDI_OFI_nic_mask_t;
+
+#define MPIDI_OFI_NIC_MASK_SET(mask, nic) \
+    ((mask).bits[(nic) / 64] |= (uint64_t) 1 << ((nic) % 64))
+
+/* ---------------------------------- */
 /* Forward declarations for static    */
 /* functions called from public APIs  */
 /* ---------------------------------- */
 
 static bool match_prov_addr(struct fi_info *prov, const char *hostname);
 static int compare_nic_names(const void *info1, const void *info2);
+static int compare_nic_closeness(const void *nic1, const void *nic2);
 static int order_multi_nic_by_pref(int pref);
+static MPIR_hwtopo_gid_t get_nic_bridge(struct fi_info *info);
+static void interleave_nics_by_bridge(MPIDI_OFI_nic_info_t * nics, int num_close_nics);
 #ifdef HAVE_LIBFABRIC_NIC
 static bool is_nic_pci_valid(struct fi_info *info);
 static int set_nic_info(void);
@@ -224,11 +240,88 @@ int MPIDI_OFI_order_multi_nic_local(void)
     return order_multi_nic_by_pref(pref);
 }
 
-int MPIDI_OFI_order_multi_nic_global(void)
+/* Exchange NIC affinity masks across node-local ranks and compute a preferred
+ * NIC index that distributes load across sharing sets. Returns the preferred
+ * NIC index into close NICs, or -1 on failure (caller should fall back to local
+ * assignment). */
+static int compute_nic_pref_global(MPIR_Comm * node_comm)
 {
-    /* TODO: pass comm, use comm->local_rank, and globally determine pref */
-    int pref = MPIR_Process.local_rank % MPIDI_OFI_global.num_close_nics;
+    int mpi_errno = MPI_SUCCESS;
+    int local_rank = node_comm->rank;
+    int local_size = node_comm->local_size;
+    int num_nics = MPIDI_OFI_global.num_nics_available;
+    int num_close = MPIDI_OFI_global.num_close_nics;
+    int pref = -1;
+    MPIDI_OFI_nic_mask_t *all_masks = NULL;
 
+    /* Build local close_mask */
+    MPIDI_OFI_nic_mask_t my_mask;
+    memset(&my_mask, 0, sizeof(my_mask));
+    for (int i = 0; i < num_nics; i++) {
+        if (MPIDI_OFI_global.nic_info[i].close) {
+            MPIDI_OFI_NIC_MASK_SET(my_mask, i);
+        }
+    }
+
+    /* Allgather masks over node_comm */
+    all_masks = MPL_malloc(local_size * sizeof(MPIDI_OFI_nic_mask_t), MPL_MEM_OTHER);
+    MPIR_ERR_CHKANDJUMP(!all_masks, mpi_errno, MPI_ERR_OTHER, "**nomem");
+
+    memcpy(&all_masks[local_rank], &my_mask, sizeof(my_mask));
+    mpi_errno = MPIR_Allgather_fallback(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL,
+                                        all_masks, sizeof(MPIDI_OFI_nic_mask_t),
+                                        MPIR_BYTE_INTERNAL, node_comm,
+                                        MPIR_COLL_ATTR_SYNC);
+    MPIR_ERR_CHECK(mpi_errno);
+
+    /* detect overlapping but unequal masks. this would imply a very strange
+     * architecture and equitable distribution of NICs in that case would be
+     * complicated. Warn and fallback to naive rotation. */
+    for (int i = 0; i < local_size; i++) {
+        for (int j = i + 1; j < local_size; j++) {
+            if (memcmp(&all_masks[i], &all_masks[j], sizeof(my_mask)) == 0)
+                continue;
+            for (int w = 0; w < MPIDI_OFI_NIC_MASK_WORDS; w++) {
+                if (all_masks[i].bits[w] & all_masks[j].bits[w]) {
+                    MPL_DBG_MSG(MPIDI_CH4_DBG_GENERAL, VERBOSE,
+                                "NIC affinity masks overlap but are not equal; "
+                                "falling back to local_rank assignment");
+                    pref = -1;
+                    goto fn_exit;
+                }
+            }
+        }
+    }
+
+    /* Compute my index within my sharing set (ranks with identical mask) */
+    int my_index_in_set = 0;
+    for (int i = 0; i < local_rank; i++) {
+        if (memcmp(&all_masks[i], &my_mask, sizeof(my_mask)) == 0) {
+            my_index_in_set++;
+        }
+    }
+
+    /* Interleave close NICs across host bridges */
+    qsort(MPIDI_OFI_global.nic_info, num_nics,
+          sizeof(MPIDI_OFI_global.nic_info[0]), compare_nic_closeness);
+
+    pref = my_index_in_set % num_close;
+
+  fn_exit:
+    MPL_free(all_masks);
+    return pref;
+  fn_fail:
+    pref = -1;
+    goto fn_exit;
+}
+
+int MPIDI_OFI_order_multi_nic_global(MPIR_Comm * node_comm)
+{
+    int pref = compute_nic_pref_global(node_comm);
+    if (pref < 0) {
+        /* Fallback: no global info available or unsupported topology */
+        pref = node_comm->rank % MPIDI_OFI_global.num_close_nics;
+    }
     return order_multi_nic_by_pref(pref);
 }
 
@@ -284,7 +377,7 @@ static int compare_nic_names(const void *info1, const void *info2)
 }
 
 /* Comparison function for NICs. This function is used in qsort(). */
-static int compare_nics(const void *nic1, const void *nic2)
+static int compare_nic_closeness(const void *nic1, const void *nic2)
 {
     const MPIDI_OFI_nic_info_t *i1 = (const MPIDI_OFI_nic_info_t *) nic1;
     const MPIDI_OFI_nic_info_t *i2 = (const MPIDI_OFI_nic_info_t *) nic2;
@@ -300,7 +393,7 @@ static int order_multi_nic_by_pref(int pref)
     MPIDI_OFI_nic_info_t *nics = MPIDI_OFI_global.nic_info;
 
     /* 1. move all close nics to the front of the list. */
-    qsort(nics, MPIDI_OFI_global.num_nics_available, sizeof(nics[0]), compare_nics);
+    qsort(nics, MPIDI_OFI_global.num_nics_available, sizeof(nics[0]), compare_nic_closeness);
 
     /* 2. rotate the close nics by pref. */
     if (pref > 0) {
@@ -324,6 +417,94 @@ static int order_multi_nic_by_pref(int pref)
     }
 
     return MPI_SUCCESS;
+}
+
+/* -- NIC bridge topology --------------------------------------- */
+
+/* Return the HostBridge ancestor of the NIC (finer-grained than socket) */
+static MPIR_hwtopo_gid_t get_nic_bridge(struct fi_info *info)
+{
+#ifdef HAVE_LIBFABRIC_NIC
+    if (info->nic && info->nic->bus_attr->bus_type == FI_BUS_PCI) {
+        struct fi_pci_attr pci = info->nic->bus_attr->attr.pci;
+        return MPIR_hwtopo_get_dev_bridge_by_pci(pci.domain_id, pci.bus_id, pci.device_id,
+                                                 pci.function_id);
+    }
+#endif
+    return MPIR_hwtopo_get_obj_by_name(info->domain_attr->name);
+}
+
+/* Interleave close NICs across HostBridges so that consecutive preference
+ * indices alternate between bridges rather than being grouped by bridge.
+ * This spreads PCIe bandwidth when ranks are assigned sequentially. */
+static void interleave_nics_by_bridge(MPIDI_OFI_nic_info_t * nics, int num_close_nics)
+{
+    MPIR_hwtopo_gid_t bridges[MPIDI_OFI_MAX_NICS];
+    int nic_bridge_idx[MPIDI_OFI_MAX_NICS];
+    int num_bridges = 0;
+
+    for (int i = 0; i < num_close_nics; i++) {
+        MPIR_hwtopo_gid_t bridge = get_nic_bridge(nics[i].nic);
+        int idx = -1;
+        for (int b = 0; b < num_bridges; b++) {
+            if (bridges[b] == bridge) {
+                idx = b;
+                break;
+            }
+        }
+        if (idx < 0) {
+            idx = num_bridges;
+            bridges[num_bridges++] = bridge;
+        }
+        nic_bridge_idx[i] = idx;
+    }
+
+    if (num_bridges <= 1 || num_close_nics <= num_bridges) {
+        return;
+    }
+
+    /* Group close NICs by bridge */
+    int group_size[MPIDI_OFI_MAX_NICS] = { 0 };
+    int group_start[MPIDI_OFI_MAX_NICS];
+
+    for (int i = 0; i < num_close_nics; i++) {
+        group_size[nic_bridge_idx[i]]++;
+    }
+
+    group_start[0] = 0;
+    for (int b = 1; b < num_bridges; b++) {
+        group_start[b] = group_start[b - 1] + group_size[b - 1];
+    }
+
+    MPIDI_OFI_nic_info_t *grouped =
+        MPL_malloc(num_close_nics * sizeof(MPIDI_OFI_nic_info_t), MPL_MEM_OTHER);
+    if (!grouped) {
+        return;
+    }
+
+    int pos[MPIDI_OFI_MAX_NICS] = { 0 };
+    for (int i = 0; i < num_close_nics; i++) {
+        int b = nic_bridge_idx[i];
+        grouped[group_start[b] + pos[b]++] = nics[i];
+    }
+
+    /* Read out breadth-first: one NIC from each bridge per round */
+    int max_depth = 0;
+    for (int b = 0; b < num_bridges; b++) {
+        if (group_size[b] > max_depth)
+            max_depth = group_size[b];
+    }
+
+    int dest = 0;
+    for (int depth = 0; depth < max_depth; depth++) {
+        for (int b = 0; b < num_bridges; b++) {
+            if (depth < group_size[b]) {
+                nics[dest++] = grouped[group_start[b] + depth];
+            }
+        }
+    }
+
+    MPL_free(grouped);
 }
 
 /* -- NIC closeness detection ----------------------------------- */
