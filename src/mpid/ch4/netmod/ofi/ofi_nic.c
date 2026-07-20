@@ -324,10 +324,6 @@ static int compute_nic_pref_global(MPIR_Comm * node_comm)
         fflush(stdout);
     }
 
-    /* Interleave close NICs across host bridges */
-    qsort(MPIDI_OFI_global.nic_info, num_nics,
-          sizeof(MPIDI_OFI_global.nic_info[0]), compare_nic_closeness);
-
     pref = my_index_in_set % num_close;
 
   fn_exit:
@@ -345,18 +341,42 @@ int MPIDI_OFI_order_multi_nic_global(MPIR_Comm * node_comm)
         /* Fallback: no global info available or unsupported topology */
         pref = node_comm->rank % MPIDI_OFI_global.num_close_nics;
     }
-    int mpi_errno = order_multi_nic_by_pref(pref);
+
+    int num_nics = MPIDI_OFI_global.num_nics_available;
+    int num_close = MPIDI_OFI_global.num_close_nics;
+    MPIDI_OFI_nic_info_t *nics = MPIDI_OFI_global.nic_info;
+
+    /* 1. Sort so close NICs come first */
+    qsort(nics, num_nics, sizeof(nics[0]), compare_nic_closeness);
+
+    /* 2. Interleave close NICs across host bridges */
+    interleave_nics_by_bridge(nics, num_close);
+
+    /* 3. Rotate close NICs by pref */
+    if (pref > 0) {
+        MPIDI_OFI_nic_info_t *tmp = MPL_malloc(pref * sizeof(nics[0]), MPL_MEM_OTHER);
+        MPIR_Assert(tmp);
+        memcpy(tmp, nics, pref * sizeof(nics[0]));
+        memmove(nics, nics + pref, (num_close - pref) * sizeof(nics[0]));
+        memcpy(nics + (num_close - pref), tmp, pref * sizeof(nics[0]));
+        MPL_free(tmp);
+    }
+
+    /* 4. Update prov_use array */
+    for (int i = 0; i < num_nics; i++) {
+        MPIDI_OFI_global.prov_use[i] = nics[i].nic;
+    }
 
     if (MPIR_CVAR_DEBUG_SUMMARY >= 2) {
         fprintf(stdout, "[rank %d] final NIC order:", MPIR_Process.rank);
-        for (int i = 0; i < MPIDI_OFI_global.num_nics_available; i++) {
+        for (int i = 0; i < num_nics; i++) {
             fprintf(stdout, " %s", MPIDI_OFI_global.prov_use[i]->domain_attr->name);
         }
         fprintf(stdout, "\n");
         fflush(stdout);
     }
 
-    return mpi_errno;
+    return MPI_SUCCESS;
 }
 
 /* ================================== */
