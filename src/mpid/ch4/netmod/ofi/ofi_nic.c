@@ -345,7 +345,18 @@ int MPIDI_OFI_order_multi_nic_global(MPIR_Comm * node_comm)
         /* Fallback: no global info available or unsupported topology */
         pref = node_comm->rank % MPIDI_OFI_global.num_close_nics;
     }
-    return order_multi_nic_by_pref(pref);
+    int mpi_errno = order_multi_nic_by_pref(pref);
+
+    if (MPIR_CVAR_DEBUG_SUMMARY >= 2) {
+        fprintf(stdout, "[rank %d] final NIC order:", MPIR_Process.rank);
+        for (int i = 0; i < MPIDI_OFI_global.num_nics_available; i++) {
+            fprintf(stdout, " %s", MPIDI_OFI_global.prov_use[i]->domain_attr->name);
+        }
+        fprintf(stdout, "\n");
+        fflush(stdout);
+    }
+
+    return mpi_errno;
 }
 
 /* ================================== */
