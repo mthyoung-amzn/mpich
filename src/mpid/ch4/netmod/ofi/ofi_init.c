@@ -692,15 +692,18 @@ int MPIDI_OFI_init_fabric(MPIR_Comm * comm)
 
     /* collectively order nics if we are in the world model */
     bool all_need_init = false;
+    MPIR_Comm *node_comm = NULL;
     if (is_comm_world) {
-        /* NOTE: we can't skip the collective based on `fabric_initialized` */
-        /* TODO: run collective and decide all_need_init (as well as num_nics, close_nic_map) */
+        node_comm = MPIR_Comm_get_node_comm(comm);
+        if (node_comm && node_comm->local_size > 1) {
+            all_need_init = true;
+        }
     }
 
     if (!fabric_initialized) {
         if (all_need_init) {
             /* order nics based on allgathered global info */
-            mpi_errno = MPIDI_OFI_order_multi_nic_global();
+            mpi_errno = MPIDI_OFI_order_multi_nic_global(node_comm);
             MPIR_ERR_CHECK(mpi_errno);
         } else {
             /* order nics based on local rank */
