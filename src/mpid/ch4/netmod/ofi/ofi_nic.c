@@ -201,6 +201,20 @@ int MPIDI_OFI_fill_prov_use(struct fi_info *prov)
             num_close_nics++;
         }
     }
+
+    /* Debug: print closeness result for each NIC */
+    if (MPIR_CVAR_DEBUG_SUMMARY >= 2) {
+        fprintf(stdout, "[rank %d] num_nics_available=%d, num_close_nics=%d\n",
+                MPIR_Process.rank, MPIDI_OFI_global.num_nics_available, num_close_nics);
+        for (int i = 0; i < MPIDI_OFI_global.num_nics_available; i++) {
+            fprintf(stdout, "[rank %d]   nic[%d] %s close=%d\n",
+                    MPIR_Process.rank, i,
+                    MPIDI_OFI_global.nic_info[i].nic->domain_attr->name,
+                    MPIDI_OFI_global.nic_info[i].close);
+        }
+        fflush(stdout);
+    }
+
     /* If there were zero NICs on my socket, then just consider every NIC close
      * and share them among all ranks with a similar view */
     if (num_close_nics == 0) {
@@ -299,6 +313,15 @@ static int compute_nic_pref_global(MPIR_Comm * node_comm)
         if (memcmp(&all_masks[i], &my_mask, sizeof(my_mask)) == 0) {
             my_index_in_set++;
         }
+    }
+
+    if (MPIR_CVAR_DEBUG_SUMMARY >= 2) {
+        fprintf(stdout, "[rank %d] local_rank=%d, mask=0x%016lx%016lx, "
+                "index_in_set=%d, pref=%d\n",
+                MPIR_Process.rank, local_rank,
+                (unsigned long) my_mask.bits[1], (unsigned long) my_mask.bits[0],
+                my_index_in_set, my_index_in_set % num_close);
+        fflush(stdout);
     }
 
     /* Interleave close NICs across host bridges */
