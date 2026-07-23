@@ -583,8 +583,22 @@ static hwloc_obj_t get_first_non_io_obj_by_pci(int domain, int bus, int dev, int
  * affinity */
 static bool pci_device_is_close(hwloc_obj_t device)
 {
-    return (hwloc_bitmap_isincluded(bindset, device->cpuset) ||
-            hwloc_bitmap_isincluded(device->cpuset, bindset));
+    static int printed = 0;
+    bool cond1 = hwloc_bitmap_isincluded(bindset, device->cpuset);
+    bool cond2 = hwloc_bitmap_isincluded(device->cpuset, bindset);
+    if (!printed) {
+        char *bindset_str = NULL, *devset_str = NULL;
+        hwloc_bitmap_asprintf(&bindset_str, bindset);
+        hwloc_bitmap_asprintf(&devset_str, device->cpuset);
+        fprintf(stderr, "[hwtopo] bindset=%s device_cpuset=%s cond1=%d cond2=%d\n",
+                bindset_str ? bindset_str : "NULL",
+                devset_str ? devset_str : "NULL",
+                cond1, cond2);
+        free(bindset_str);
+        free(devset_str);
+        printed = 1;
+    }
+    return (cond1 || cond2);
 }
 #endif
 
