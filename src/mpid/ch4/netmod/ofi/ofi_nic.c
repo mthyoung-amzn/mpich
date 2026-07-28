@@ -20,8 +20,50 @@ cvars:
       scope       : MPI_T_SCOPE_LOCAL
       description : >-
         Accept the NIC value from a user
+
+    - name        : MPIR_CVAR_CH4_OFI_NIC_MAPPING
+      category    : CH4_OFI
+      type        : string
+      default     : NULL
+      class       : none
+      verbosity   : MPI_T_VERBOSITY_USER_BASIC
+      scope       : MPI_T_SCOPE_LOCAL
+      description : >-
+        If set, restrict MPICH to only use OFI providers whose domain names
+        appear in this comma-separated list (e.g. "rdmap85s0,rdmap86s0").
+        Providers not in the list are excluded.
+        This overrides any topology-based NIC selection and is intended for
+        explicit GPU-to-NIC affinity control. Set per-rank via a wrapper script
+        or similar.
 === END_MPI_T_CVAR_INFO_BLOCK ===
 */
+
+/* Return true if domain_name appears in the comma-separated MPIR_CVAR_CH4_OFI_NIC_MAPPING list */
+static bool nic_in_mapping_list(const char *domain_name)
+{
+    const char *list = MPIR_CVAR_CH4_OFI_NIC_MAPPING;
+    if (list == NULL || domain_name == NULL)
+        return true;            /* no filter active */
+
+    size_t name_len = strlen(domain_name);
+    const char *p = list;
+    while (*p) {
+        /* skip leading whitespace/commas */
+        while (*p == ',' || *p == ' ')
+            p++;
+        if (*p == '\0')
+            break;
+        /* find end of this token */
+        const char *end = p;
+        while (*end && *end != ',' && *end != ' ')
+            end++;
+        size_t tok_len = (size_t) (end - p);
+        if (tok_len == name_len && strncmp(p, domain_name, tok_len) == 0)
+            return true;
+        p = end;
+    }
+    return false;
+}
 
 /* ---------------------------------- */
 /* NIC affinity mask type and macros  */
@@ -106,6 +148,10 @@ int MPIDI_OFI_fill_prov_use(struct fi_info *prov)
             continue;
         }
         if (!MPIDI_OFI_nic_is_up(p)) {
+            continue;
+        }
+        /* If NIC_MAPPING is set, skip providers not in the list */
+        if (!nic_in_mapping_list(p->domain_attr->name)) {
             continue;
         }
         if (!pref_prov || match_prov_addr(p, MPIR_pmi_hostname())) {
