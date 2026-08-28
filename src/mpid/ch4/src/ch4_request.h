@@ -119,6 +119,14 @@ MPL_STATIC_INLINE_PREFIX void MPID_Prequest_free_hook(MPIR_Request * req)
 {
     MPIR_FUNC_ENTER;
 
+#ifdef HAVE_CH4_NETMOD_OFI
+    /* Release any per-persistent-request cached MR (Regime A). No-op unless the
+     * OFI netmod attached persist state to this request. */
+    if (MPIDI_PREQUEST(req, nm_persist) != NULL) {
+        MPIDI_NM_prequest_free_hook(req);
+    }
+#endif
+
     /* If a user passed a derived datatype for this persistent communication,
      * free it.
      * We could have done this cleanup in more general request cleanup functions,

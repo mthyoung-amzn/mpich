@@ -18,6 +18,25 @@
 #include <rdma/fi_trigger.h>
 #include "ofi_capability_sets.h"
 
+/* Per-persistent-request cached MR state (OFI netmod). The base MUST be the
+ * first member so that a MPIDI_NM_persist_base_t* and a MPIDI_OFI_persist_mr_t*
+ * are interconvertible. Downcast only after checking base.owner==MPIDI_NETMOD. */
+typedef enum {
+    MPIDI_OFI_PERSIST_NONE = 0,
+    MPIDI_OFI_PERSIST_HMEM,     /* Regime A: single MR bound on one ctx_idx */
+    MPIDI_OFI_PERSIST_RNDV      /* Regime B: per-NIC MR array (not impl. in v1) */
+} MPIDI_OFI_persist_kind;
+
+typedef struct MPIDI_OFI_persist_mr {
+    MPIDI_NM_persist_base_t base;       /* MUST be first member */
+    MPIDI_OFI_persist_kind kind;
+    /* validity guard: re-register if the effective buffer/len changes */
+    const void *reg_base;
+    MPI_Aint reg_len;
+    int ctx_idx;                /* the (vci,nic) the MR was bound on (HMEM) */
+    struct fid_mr *mr;          /* the cached MR (HMEM: single) */
+} MPIDI_OFI_persist_mr_t;
+
 /* Defines */
 
 /* configure option --enable-ofi-domain */

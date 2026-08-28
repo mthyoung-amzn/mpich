@@ -20,6 +20,20 @@ cvars:
         The maximum number of entries to hold in the HMEM MR cache. When an entry
         is evicted, the corresponding MR is unregistered.
 
+    - name        : MPIR_CVAR_CH4_OFI_PERSISTENT_MR
+      category    : CH4_OFI
+      type        : boolean
+      default     : true
+      class       : none
+      verbosity   : MPI_T_VERBOSITY_USER_BASIC
+      scope       : MPI_T_SCOPE_LOCAL
+      description : >-
+        If true, persistent point-to-point requests that register an HMEM/GPU
+        memory region cache that MR on the request and reuse it across
+        MPI_Start calls, bypassing the global MR cache. The MR is released when
+        the request is freed with MPI_Request_free. Set to false to fall back to
+        the global MR cache for persistent requests.
+
 === END_MPI_T_CVAR_INFO_BLOCK ===
 */
 
@@ -277,4 +291,110 @@ int MPIDI_OFI_mr_cache_finalize(void)
     mr_cache_count = 0;
 
     return mpi_errno;
+}
+
+/* ---------------------------------------- */
+/* Per-persistent-request MR caching (Regime A: HMEM/GPU direct send/recv).
+ *
+ * A persistent request that registers an HMEM MR caches it on the request and
+ * reuses it across MPI_Start calls, bypassing the global MR cache above. The MR
+ * is released in MPIDI_NM_prequest_free_hook when the request is freed. */
+
+MPIDI_NM_persist_base_t *MPIDI_NM_persist_alloc(void)
+{
+    MPIDI_OFI_persist_mr_t *p = MPL_calloc(1, sizeof(MPIDI_OFI_persist_mr_t), MPL_MEM_OTHER);
+    if (p) {
+        p->base.owner = MPIDI_NETMOD;
+        p->kind = MPIDI_OFI_PERSIST_NONE;
+        p->mr = NULL;
+    }
+    return (MPIDI_NM_persist_base_t *) p;
+}
+
+int MPIDI_OFI_persist_get_or_reg_mr(MPIDI_NM_persist_base_t * persist_state, void *buf,
+                                    size_t data_sz, MPL_pointer_attr_t * attr, int ctx_idx,
+                                    struct fid_mr **mr)
+{
+    int mpi_errno = MPI_SUCCESS;
+
+    /* No persistent state, or CVAR disabled, or not owned by us: fall back to
+     * the global MR cache path (existing behavior). */
+    if (!MPIR_CVAR_CH4_OFI_PERSISTENT_MR || !MPIDI_OFI_PERSIST_OWNS(persist_state)) {
+        mpi_errno = MPIDI_OFI_register_memory_and_bind((char *) buf, data_sz, attr, ctx_idx, mr);
+        goto fn_exit;
+    }
+
+    MPIDI_OFI_persist_mr_t *slot = (MPIDI_OFI_persist_mr_t *) persist_state;
+
+    /* Determine the region to register. For device buffers, register the whole
+     * underlying allocation (bounds), matching the global cache and maximizing
+     * reuse across starts. For host buffers, register the exact range. */
+    void *bounds_base;
+    uintptr_t bounds_len;
+    if (MPL_gpu_attr_is_dev(attr)) {
+        int mpl_err = MPL_gpu_get_buffer_bounds(buf, &bounds_base, &bounds_len);
+        MPIR_ERR_CHKANDJUMP(mpl_err != MPL_SUCCESS, mpi_errno, MPI_ERR_OTHER,
+                            "**gpu_get_buffer_info");
+    } else {
+        bounds_base = buf;
+        bounds_len = data_sz;
+    }
+
+    /* Reuse if we already have a valid HMEM MR for this exact region/ctx. */
+    if (slot->kind == MPIDI_OFI_PERSIST_HMEM && slot->mr != NULL &&
+        slot->reg_base == bounds_base && slot->reg_len == (MPI_Aint) bounds_len &&
+        slot->ctx_idx == ctx_idx) {
+        *mr = slot->mr;
+        goto fn_exit;
+    }
+
+    /* Stale/mismatched cached MR: tear it down and re-register below. */
+    if (slot->mr != NULL) {
+        MPIDI_OFI_CALL(fi_close(&slot->mr->fid), mr_unreg);
+        slot->mr = NULL;
+        slot->kind = MPIDI_OFI_PERSIST_NONE;
+    }
+
+    /* Register once and stash on the slot (does NOT touch the global cache). */
+    mpi_errno = MPIDI_OFI_register_memory(bounds_base, bounds_len, attr, ctx_idx, 0, mr);
+    MPIR_ERR_CHECK(mpi_errno);
+
+    if (*mr) {
+        mpi_errno = MPIDI_OFI_mr_bind(MPIDI_OFI_global.prov_use[0], *mr,
+                                      MPIDI_OFI_global.ctx[ctx_idx].ep, NULL);
+        MPIR_ERR_CHECK(mpi_errno);
+
+        slot->kind = MPIDI_OFI_PERSIST_HMEM;
+        slot->reg_base = bounds_base;
+        slot->reg_len = (MPI_Aint) bounds_len;
+        slot->ctx_idx = ctx_idx;
+        slot->mr = *mr;
+    }
+
+  fn_exit:
+    return mpi_errno;
+  fn_fail:
+    goto fn_exit;
+}
+
+void MPIDI_NM_prequest_free_hook(MPIR_Request * req)
+{
+    int mpi_errno = MPI_SUCCESS;
+    MPIDI_NM_persist_base_t *ps = MPIDI_PREQUEST(req, nm_persist);
+    if (!MPIDI_OFI_PERSIST_OWNS(ps)) {
+        return;
+    }
+    MPIDI_OFI_persist_mr_t *slot = (MPIDI_OFI_persist_mr_t *) ps;
+    if (slot->mr != NULL) {
+        MPIDI_OFI_CALL(fi_close(&slot->mr->fid), mr_unreg);
+        slot->mr = NULL;
+    }
+
+  fn_exit:
+    MPL_free(slot);
+    MPIDI_PREQUEST(req, nm_persist) = NULL;
+    return;
+  fn_fail:
+    /* best-effort cleanup even if fi_close failed */
+    goto fn_exit;
 }

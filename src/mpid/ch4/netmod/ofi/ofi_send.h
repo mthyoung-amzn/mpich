@@ -181,7 +181,8 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_OFI_send_normal(const void *data, MPI_Aint da
                                                    int vci_local, int vci_remote,
                                                    int sender_nic, int receiver_nic,
                                                    MPIR_Request * sreq,
-                                                   MPL_pointer_attr_t attr, bool need_mr)
+                                                   MPL_pointer_attr_t attr, bool need_mr,
+                                                   MPIDI_NM_persist_base_t * persist_state)
 {
     int mpi_errno = MPI_SUCCESS;
     MPIR_FUNC_ENTER;
@@ -197,10 +198,17 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_OFI_send_normal(const void *data, MPI_Aint da
     void *desc = NULL;
     struct fid_mr *mr = NULL;
     if (need_mr) {
-        MPIDI_OFI_register_memory_and_bind((void *) data, data_sz, &attr, ctx_idx, &mr);
+        mpi_errno = MPIDI_OFI_persist_get_or_reg_mr(persist_state, (void *) data, data_sz,
+                                                    &attr, ctx_idx, &mr);
+        MPIR_ERR_CHECK(mpi_errno);
         if (mr != NULL) {
             desc = fi_mr_desc(mr);
-            MPIDI_OFI_REQUEST(sreq, mr) = mr;
+            /* Only stash the MR on the request (for release at completion) when it
+             * is NOT owned by a persistent request. Persistent-owned MRs are kept
+             * alive across starts and released in MPIDI_NM_prequest_free_hook. */
+            if (!MPIDI_OFI_PERSIST_OWNS(persist_state)) {
+                MPIDI_OFI_REQUEST(sreq, mr) = mr;
+            }
         }
     }
 
@@ -303,7 +311,8 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_OFI_send(const void *buf, MPI_Aint count, MPI
                                             int context_offset, MPIDI_av_entry_t * addr,
                                             int vci_src, int vci_dst,
                                             MPIR_Request ** request,
-                                            bool is_am, bool syncflag, bool is_init)
+                                            bool is_am, bool syncflag, bool is_init,
+                                            MPIDI_NM_persist_base_t * persist_state)
 {
     int mpi_errno = MPI_SUCCESS;
     MPIR_FUNC_ENTER;
@@ -502,7 +511,8 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_OFI_send(const void *buf, MPI_Aint count, MPI
 
         mpi_errno = MPIDI_OFI_send_normal(data, data_sz, cq_data, dst_rank, tag, comm,
                                           match_bits, addr, vci_src, vci_dst,
-                                          sender_nic, receiver_nic, *request, attr, need_mr);
+                                          sender_nic, receiver_nic, *request, attr, need_mr,
+                                          persist_state);
         MPIR_ERR_CHECK(mpi_errno);
     }
 
@@ -535,7 +545,8 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_OFI_send(const void *buf, MPI_Aint count, MPI
 MPL_STATIC_INLINE_PREFIX int MPIDI_NM_mpi_isend(const void *buf, MPI_Aint count,
                                                 MPI_Datatype datatype, int rank, int tag,
                                                 MPIR_Comm * comm, int attr,
-                                                MPIDI_av_entry_t * addr, MPIR_Request ** request)
+                                                MPIDI_av_entry_t * addr, MPIR_Request ** request,
+                                                MPIDI_NM_persist_base_t * persist_state)
 {
     int mpi_errno;
     MPIR_FUNC_ENTER;
@@ -565,7 +576,7 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_NM_mpi_isend(const void *buf, MPI_Aint count,
         bool is_init = (bool) MPIR_PT2PT_ATTR_GET_INITFLAG(attr);
         mpi_errno = MPIDI_OFI_send(buf, count, datatype, rank, tag, comm,
                                    context_offset, addr, vci_src, vci_dst, request,
-                                   false /* is_am */ , syncflag, is_init);
+                                   false /* is_am */ , syncflag, is_init, persist_state);
         MPIR_ERR_CHECK(mpi_errno);
     }
 
@@ -611,7 +622,8 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_NM_am_tag_send(int rank, MPIR_Comm * comm,
     MPIDI_av_entry_t *addr = MPIDIU_comm_rank_to_av(comm, rank);
     mpi_errno = MPIDI_OFI_send(buf, count, datatype, rank, tag, comm,
                                0 /* context_offset */ , addr, vci_src, vci_dst, &ofi_req,
-                               true /* is_am */ , false /* syncflag */ , false /* is_init */);
+                               true /* is_am */ , false /* syncflag */ , false /* is_init */ ,
+                               NULL /* persist_state */);
     MPIR_ERR_CHECK(mpi_errno);
 
     MPIDI_OFI_REQUEST(ofi_req, am_req) = sreq;

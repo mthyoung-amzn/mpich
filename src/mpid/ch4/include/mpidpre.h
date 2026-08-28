@@ -23,6 +23,18 @@
 
 #include "mpid_thread.h"
 #include "mpid_sched.h"
+
+/* NM-agnostic base for per-persistent-request netmod state (e.g. cached MRs).
+ * A netmod that participates allocates a derived struct whose FIRST member is
+ * this base, stamps `owner` with its id (MPIDI_NETMOD / MPIDI_SHM, see
+ * ch4_types.h), and downcasts only after checking `owner`. Shared code treats
+ * the pointer as opaque and never dereferences beyond `owner`.
+ * Defined before netmodpre.h so netmod pre-headers can embed it as a first
+ * member of their own derived structs. */
+typedef struct MPIDI_NM_persist_base {
+    int owner;                  /* MPIDI_NETMOD or MPIDI_SHM */
+} MPIDI_NM_persist_base_t;
+
 #include "netmodpre.h"
 #ifndef MPIDI_CH4_DIRECT_NETMOD
 #include "shmpre.h"
@@ -247,6 +259,10 @@ typedef struct MPIDI_prequest {
     int tag;
     int context_offset;
     MPI_Datatype datatype;
+    /* Opaque, netmod-owned per-request state (cached MR, etc). NULL until the
+     * first start that registers, and for requests the netmod opts out of
+     * (e.g. MPI_ANY_SOURCE). Freed in MPID_Prequest_free_hook. */
+    MPIDI_NM_persist_base_t *nm_persist;
 } MPIDI_prequest_t;
 
 /* Structures for partitioned pt2pt request */

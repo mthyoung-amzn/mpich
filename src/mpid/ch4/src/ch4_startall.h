@@ -20,22 +20,56 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_prequest_start(MPIR_Request * preq)
         goto fn_exit;
 
     MPIR_Comm *comm = preq->comm;
+
+    /* Lazily allocate per-request netmod persist state (e.g. cached MR) on first
+     * start. Opt out for MPI_ANY_SOURCE (v1) and self-comm (no NIC MR needed).
+     * MPIDI_NM_persist_alloc returns NULL if the netmod does not participate. */
+    MPIDI_NM_persist_base_t *persist_state = MPIDI_PREQUEST(preq, nm_persist);
+#ifdef HAVE_CH4_NETMOD_OFI
+    if (persist_state == NULL &&
+        MPIDI_PREQUEST(preq, rank) != MPI_ANY_SOURCE && !MPIR_is_self_comm(comm)) {
+        persist_state = MPIDI_NM_persist_alloc();
+        MPIDI_PREQUEST(preq, nm_persist) = persist_state;
+    }
+#endif
+
     switch (MPIDI_PREQUEST(preq, p_type)) {
 
         case MPIDI_PTYPE_RECV:
-            mpi_errno = MPID_Irecv(MPIDI_PREQUEST(preq, buffer), MPIDI_PREQUEST(preq, count),
-                                   MPIDI_PREQUEST(preq, datatype), MPIDI_PREQUEST(preq, rank),
-                                   MPIDI_PREQUEST(preq, tag), comm,
-                                   MPIDI_PREQUEST(preq, context_offset),
-                                   &preq->u.persist.real_request);
+            if (persist_state && !MPIR_is_self_comm(comm)) {
+                int rank = MPIDI_PREQUEST(preq, rank);
+                MPIDI_av_entry_t *av =
+                    (rank == MPI_ANY_SOURCE ? NULL : MPIDIU_comm_rank_to_av(comm, rank));
+                mpi_errno = MPIDI_irecv(MPIDI_PREQUEST(preq, buffer), MPIDI_PREQUEST(preq, count),
+                                        MPIDI_PREQUEST(preq, datatype), rank,
+                                        MPIDI_PREQUEST(preq, tag), comm,
+                                        MPIDI_PREQUEST(preq, context_offset), av,
+                                        &preq->u.persist.real_request, persist_state);
+            } else {
+                mpi_errno = MPID_Irecv(MPIDI_PREQUEST(preq, buffer), MPIDI_PREQUEST(preq, count),
+                                       MPIDI_PREQUEST(preq, datatype), MPIDI_PREQUEST(preq, rank),
+                                       MPIDI_PREQUEST(preq, tag), comm,
+                                       MPIDI_PREQUEST(preq, context_offset),
+                                       &preq->u.persist.real_request);
+            }
             break;
 
         case MPIDI_PTYPE_SEND:
-            mpi_errno = MPID_Isend(MPIDI_PREQUEST(preq, buffer), MPIDI_PREQUEST(preq, count),
-                                   MPIDI_PREQUEST(preq, datatype), MPIDI_PREQUEST(preq, rank),
-                                   MPIDI_PREQUEST(preq, tag), comm,
-                                   MPIDI_PREQUEST(preq, context_offset),
-                                   &preq->u.persist.real_request);
+            if (persist_state && !MPIR_is_self_comm(comm)) {
+                int rank = MPIDI_PREQUEST(preq, rank);
+                MPIDI_av_entry_t *av = MPIDIU_comm_rank_to_av(comm, rank);
+                mpi_errno = MPIDI_isend(MPIDI_PREQUEST(preq, buffer), MPIDI_PREQUEST(preq, count),
+                                        MPIDI_PREQUEST(preq, datatype), rank,
+                                        MPIDI_PREQUEST(preq, tag), comm,
+                                        MPIDI_PREQUEST(preq, context_offset), av,
+                                        &preq->u.persist.real_request, persist_state);
+            } else {
+                mpi_errno = MPID_Isend(MPIDI_PREQUEST(preq, buffer), MPIDI_PREQUEST(preq, count),
+                                       MPIDI_PREQUEST(preq, datatype), MPIDI_PREQUEST(preq, rank),
+                                       MPIDI_PREQUEST(preq, tag), comm,
+                                       MPIDI_PREQUEST(preq, context_offset),
+                                       &preq->u.persist.real_request);
+            }
             break;
 
         case MPIDI_PTYPE_SSEND:
