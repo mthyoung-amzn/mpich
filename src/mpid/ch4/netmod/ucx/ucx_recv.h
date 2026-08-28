@@ -297,7 +297,8 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_NM_mpi_irecv(void *buf,
                                                 int tag,
                                                 MPIR_Comm * comm, int attr,
                                                 MPIDI_av_entry_t * addr, MPIR_Request ** request,
-                                                MPIR_Request * partner)
+                                                MPIR_Request * partner,
+                                                MPIDI_NM_persist_base_t * persist_state)
 {
     int mpi_errno;
     MPIR_FUNC_ENTER;

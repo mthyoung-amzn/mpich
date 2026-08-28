@@ -67,6 +67,19 @@ int MPIDI_OFI_register_memory_and_bind(char *buf, size_t data_sz, MPL_pointer_at
 int MPIDI_OFI_mr_complete(struct fid_mr *mr, bool keep_cache);
 int MPIDI_OFI_mr_cache_finalize(void);
 
+/* Per-persistent-request MR caching (Regime A: HMEM/GPU direct). */
+struct MPIDI_NM_persist_base;   /* fwd decl from mpidpre.h */
+MPIDI_NM_persist_base_t *MPIDI_NM_persist_alloc(void);
+int MPIDI_OFI_persist_get_or_reg_mr(MPIDI_NM_persist_base_t * persist_state, void *buf,
+                                    size_t data_sz, MPL_pointer_attr_t * attr, int ctx_idx,
+                                    struct fid_mr **mr);
+void MPIDI_NM_prequest_free_hook(MPIR_Request * req);
+
+/* True iff a persistent request owns MR state (participating OFI netmod). */
+#define MPIDI_OFI_PERSIST_OWNS(ps_) \
+    ((ps_) != NULL && ((MPIDI_NM_persist_base_t *) (ps_))->owner == MPIDI_NETMOD)
+
+
 /*
  * Helper routines and macros for request completion
  */

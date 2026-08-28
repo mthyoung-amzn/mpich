@@ -30,14 +30,14 @@ MPL_STATIC_INLINE_PREFIX int anysource_irecv(void *buf, MPI_Aint count, MPI_Data
     MPIR_Assert(*request);
 #endif
 
-    mpi_errno = MPIDI_SHM_mpi_irecv(buf, count, datatype, rank, tag, comm, attr, request);
+    mpi_errno = MPIDI_SHM_mpi_irecv(buf, count, datatype, rank, tag, comm, attr, request, NULL);
     MPIR_ERR_CHECK(mpi_errno);
 
     if (!MPIR_Request_is_complete(*request) && !MPIDIG_REQUEST_IN_PROGRESS(*request)) {
         MPIR_Request *nm_rreq = NULL;
         /* we pass the shm request in so both .dev.anysrc_partner will get set */
         mpi_errno = MPIDI_NM_mpi_irecv(buf, count, datatype, rank, tag, comm, attr,
-                                       av, &nm_rreq, *request);
+                                       av, &nm_rreq, *request, NULL);
         MPIR_ERR_CHECK(mpi_errno);
     }
   fn_exit:
@@ -86,24 +86,29 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_irecv(void *buf,
                                          int rank,
                                          int tag,
                                          MPIR_Comm * comm,
-                                         int attr, MPIDI_av_entry_t * av, MPIR_Request ** req)
+                                         int attr, MPIDI_av_entry_t * av, MPIR_Request ** req,
+                                         MPIDI_NM_persist_base_t * persist_state)
 {
     int mpi_errno = MPI_SUCCESS;
     MPIR_FUNC_ENTER;
 
     *(req) = NULL;
 #ifdef MPIDI_CH4_DIRECT_NETMOD
-    mpi_errno = MPIDI_NM_mpi_irecv(buf, count, datatype, rank, tag, comm, attr, av, req, NULL);
+    mpi_errno = MPIDI_NM_mpi_irecv(buf, count, datatype, rank, tag, comm, attr, av, req, NULL,
+                                   persist_state);
 #else
     if (unlikely(rank == MPI_ANY_SOURCE)) {
+        /* anysource is opted out of persistent MR caching in v1 */
         mpi_errno = anysource_irecv(buf, count, datatype, rank, tag, comm, attr, av, req);
 
     } else {
         if (MPIDI_av_is_local(av))
-            mpi_errno = MPIDI_SHM_mpi_irecv(buf, count, datatype, rank, tag, comm, attr, req);
+            mpi_errno = MPIDI_SHM_mpi_irecv(buf, count, datatype, rank, tag, comm, attr, req,
+                                            persist_state);
         else
             mpi_errno =
-                MPIDI_NM_mpi_irecv(buf, count, datatype, rank, tag, comm, attr, av, req, NULL);
+                MPIDI_NM_mpi_irecv(buf, count, datatype, rank, tag, comm, attr, av, req, NULL,
+                                   persist_state);
     }
 #endif
     MPIR_ERR_CHECK(mpi_errno);
@@ -229,7 +234,7 @@ MPL_STATIC_INLINE_PREFIX int MPID_Irecv(void *buf,
         mpi_errno = MPIDI_Self_irecv(buf, count, datatype, rank, tag, comm, attr, request);
     } else {
         MPIDI_av_entry_t *av = (rank == MPI_ANY_SOURCE ? NULL : MPIDIU_comm_rank_to_av(comm, rank));
-        mpi_errno = MPIDI_irecv(buf, count, datatype, rank, tag, comm, attr, av, request);
+        mpi_errno = MPIDI_irecv(buf, count, datatype, rank, tag, comm, attr, av, request, NULL);
     }
 
     MPIR_ERR_CHECK(mpi_errno);

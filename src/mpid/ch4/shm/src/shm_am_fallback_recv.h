@@ -28,7 +28,8 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_SHM_mpi_irecv(void *buf,
                                                  int rank,
                                                  int tag,
                                                  MPIR_Comm * comm, int attr,
-                                                 MPIR_Request ** request)
+                                                 MPIR_Request ** request,
+                                                 MPIDI_NM_persist_base_t * persist_state)
 {
     int mpi_errno = MPI_SUCCESS;
 

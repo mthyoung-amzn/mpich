@@ -15,19 +15,23 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_isend(const void *buf,
                                          int rank,
                                          int tag,
                                          MPIR_Comm * comm, int attr,
-                                         MPIDI_av_entry_t * av, MPIR_Request ** req)
+                                         MPIDI_av_entry_t * av, MPIR_Request ** req,
+                                         MPIDI_NM_persist_base_t * persist_state)
 {
     int mpi_errno = MPI_SUCCESS;
     MPIR_FUNC_ENTER;
 
     *(req) = NULL;
 #ifdef MPIDI_CH4_DIRECT_NETMOD
-    mpi_errno = MPIDI_NM_mpi_isend(buf, count, datatype, rank, tag, comm, attr, av, req);
+    mpi_errno = MPIDI_NM_mpi_isend(buf, count, datatype, rank, tag, comm, attr, av, req,
+                                   persist_state);
 #else
     if ((MPIDI_av_is_local(av)))
-        mpi_errno = MPIDI_SHM_mpi_isend(buf, count, datatype, rank, tag, comm, attr, av, req);
+        mpi_errno = MPIDI_SHM_mpi_isend(buf, count, datatype, rank, tag, comm, attr, av, req,
+                                        persist_state);
     else
-        mpi_errno = MPIDI_NM_mpi_isend(buf, count, datatype, rank, tag, comm, attr, av, req);
+        mpi_errno = MPIDI_NM_mpi_isend(buf, count, datatype, rank, tag, comm, attr, av, req,
+                                       persist_state);
 #endif
     MPIR_ERR_CHECK(mpi_errno);
 
@@ -55,7 +59,7 @@ MPL_STATIC_INLINE_PREFIX int MPID_Isend(const void *buf,
         mpi_errno = MPIDI_Self_isend(buf, count, datatype, rank, tag, comm, attr, request);
     } else {
         av = MPIDIU_comm_rank_to_av(comm, rank);
-        mpi_errno = MPIDI_isend(buf, count, datatype, rank, tag, comm, attr, av, request);
+        mpi_errno = MPIDI_isend(buf, count, datatype, rank, tag, comm, attr, av, request, NULL);
     }
 
     MPIR_ERR_CHECK(mpi_errno);
@@ -111,7 +115,7 @@ MPL_STATIC_INLINE_PREFIX int MPID_Irsend(const void *buf,
         mpi_errno = MPIDI_Self_isend(buf, count, datatype, rank, tag, comm, attr, request);
     } else {
         av = MPIDIU_comm_rank_to_av(comm, rank);
-        mpi_errno = MPIDI_isend(buf, count, datatype, rank, tag, comm, attr, av, request);
+        mpi_errno = MPIDI_isend(buf, count, datatype, rank, tag, comm, attr, av, request, NULL);
     }
 
     MPIR_ERR_CHECK(mpi_errno);

@@ -12,7 +12,8 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_SHM_mpi_isend(const void *buf,
                                                  int rank,
                                                  int tag,
                                                  MPIR_Comm * comm, int attr,
-                                                 MPIDI_av_entry_t * addr, MPIR_Request ** request)
+                                                 MPIDI_av_entry_t * addr, MPIR_Request ** request,
+                                                 MPIDI_NM_persist_base_t * persist_state)
 {
     int mpi_errno = MPI_SUCCESS;
 
