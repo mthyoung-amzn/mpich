@@ -73,6 +73,8 @@ MPIDI_NM_persist_base_t *MPIDI_NM_persist_alloc(void);
 int MPIDI_OFI_persist_get_or_reg_mr(MPIDI_NM_persist_base_t * persist_state, void *buf,
                                     size_t data_sz, MPL_pointer_attr_t * attr, int ctx_idx,
                                     struct fid_mr **mr);
+void MPIDI_OFI_persist_get_attr(MPIDI_NM_persist_base_t * persist_state, const void *qbuf,
+                                MPL_pointer_attr_t * attr_out);
 void MPIDI_NM_prequest_free_hook(MPIR_Request * req);
 
 /* True iff a persistent request owns MR state (participating OFI netmod). */

@@ -34,6 +34,19 @@ cvars:
         the request is freed with MPI_Request_free. Set to false to fall back to
         the global MR cache for persistent requests.
 
+    - name        : MPIR_CVAR_CH4_OFI_PERSISTENT_ATTR
+      category    : CH4_OFI
+      type        : boolean
+      default     : true
+      class       : none
+      verbosity   : MPI_T_VERBOSITY_USER_BASIC
+      scope       : MPI_T_SCOPE_LOCAL
+      description : >-
+        If true, persistent point-to-point requests cache the GPU pointer attr
+        of their (fixed) send/recv buffer on the request and reuse it across
+        MPI_Start calls, avoiding a per-start pointer-attr query. Set to false
+        to query the pointer attr on every start.
+
 === END_MPI_T_CVAR_INFO_BLOCK ===
 */
 
@@ -309,6 +322,29 @@ MPIDI_NM_persist_base_t *MPIDI_NM_persist_alloc(void)
         p->mr = NULL;
     }
     return (MPIDI_NM_persist_base_t *) p;
+}
+
+/* Return the pointer attr for qbuf, reusing a value cached on the persistent
+ * request when possible. Falls back to a direct query when there is no
+ * persistent state, the CVAR is off, or the cached attr is for a different
+ * buffer. On a cold miss the queried attr is cached for subsequent starts. */
+void MPIDI_OFI_persist_get_attr(MPIDI_NM_persist_base_t * persist_state, const void *qbuf,
+                                MPL_pointer_attr_t * attr_out)
+{
+    if (MPIR_CVAR_CH4_OFI_PERSISTENT_ATTR && MPIDI_OFI_PERSIST_OWNS(persist_state)) {
+        MPIDI_OFI_persist_mr_t *slot = (MPIDI_OFI_persist_mr_t *) persist_state;
+        if (slot->attr_valid && slot->attr_buf == qbuf) {
+            *attr_out = slot->attr_cached;
+            return;
+        }
+        MPIR_GPU_query_pointer_attr(qbuf, attr_out);
+        slot->attr_buf = qbuf;
+        slot->attr_cached = *attr_out;
+        slot->attr_valid = true;
+        return;
+    }
+
+    MPIR_GPU_query_pointer_attr(qbuf, attr_out);
 }
 
 int MPIDI_OFI_persist_get_or_reg_mr(MPIDI_NM_persist_base_t * persist_state, void *buf,

@@ -35,6 +35,12 @@ typedef struct MPIDI_OFI_persist_mr {
     MPI_Aint reg_len;
     int ctx_idx;                /* the (vci,nic) the MR was bound on (HMEM) */
     struct fid_mr *mr;          /* the cached MR (HMEM: single) */
+
+    /* Cached pointer attr for the request's fixed buffer (invariant across
+     * starts). Value type, so no release at free. Gated by PERSISTENT_ATTR. */
+    bool attr_valid;
+    const void *attr_buf;       /* buffer the cached attr belongs to */
+    MPL_pointer_attr_t attr_cached;
 } MPIDI_OFI_persist_mr_t;
 
 /* Defines */

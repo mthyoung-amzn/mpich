@@ -180,7 +180,7 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_OFI_do_irecv(void *buf,
 
     recv_buf = MPIR_get_contig_ptr(buf, dt_true_lb);
     MPL_pointer_attr_t attr = {.type = MPL_GPU_POINTER_UNREGISTERED_HOST };
-    MPIR_GPU_query_pointer_attr(recv_buf, &attr);
+    MPIDI_OFI_persist_get_attr(persist_state, recv_buf, &attr);
 
     if (MPIDI_OFI_ENABLE_HMEM && data_sz >= MPIR_CVAR_CH4_OFI_GPU_RDMA_THRESHOLD &&
         MPIDI_OFI_ENABLE_MR_HMEM && dt_contig) {
