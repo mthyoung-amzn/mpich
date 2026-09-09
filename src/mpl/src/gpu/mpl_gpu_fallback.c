@@ -107,6 +107,10 @@ int MPL_gpu_get_root_device(int dev_id)
     return -1;
 }
 
+int MPL_gpu_get_current_dev_bdf(int *domain, int *bus, int *dev, int *func) {
+    return -1;
+}
+
 int MPL_gpu_global_to_local_dev_id(int global_dev_id)
 {
     return -1;
