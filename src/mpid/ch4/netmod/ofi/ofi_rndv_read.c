@@ -7,6 +7,7 @@
 #include "ofi_impl.h"
 #include "ofi_events.h"
 #include "ofi_rndv.h"
+#include "ofi_rndv_stats.h"
 
 #include "ofi_rndv_rdma_common.inc"
 
@@ -75,12 +76,16 @@ int MPIDI_OFI_rndvread_ack_event(struct fi_cq_tagged_entry *wc, MPIR_Request * r
     MPIDI_OFI_rndvread_t *p = &MPIDI_OFI_AMREQ_READ(sreq);
 
     int num_nics = MPIDI_OFI_global.num_nics;
+    double close_t0 = MPIDI_OFI_stats_on()? MPIDI_OFI_stats_now() : 0;
     for (int i = 0; i < num_nics; i++) {
         uint64_t key = fi_mr_key(p->u.send.mrs[i]);
         MPIDI_OFI_CALL(fi_close(&p->u.send.mrs[i]->fid), mr_unreg);
         if (!MPIDI_OFI_ENABLE_MR_PROV_KEY) {
             MPIDI_OFI_mr_key_free(MPIDI_OFI_LOCAL_MR_KEY, key);
         }
+    }
+    if (MPIDI_OFI_stats_on()) {
+        MPIDI_OFI_rndv_stats.mrreg_close_time += (MPIDI_OFI_stats_now() - close_t0);
     }
     MPL_free(p->u.send.mrs);
     MPL_free(r);
@@ -201,6 +206,14 @@ static int rndvread_read_poll(MPIX_Async_thing thing)
                                         p->av, p->vci_local, p->vci_remote, nic, disp,
                                         p->u.recv.rkeys[nic]);
             MPIR_ERR_CHECK(mpi_errno);
+            if (MPIDI_OFI_stats_on()) {
+                if (p->ts_first_read == 0) {
+                    /* first read of this message: close the control-wait
+                     * interval and open the bulk-transfer interval */
+                    p->ts_first_read = MPIDI_OFI_stats_now();
+                }
+                MPIDI_OFI_rndv_stats.read_chunks++;
+            }
             p->u.recv.num_infly++;
         }
         p->u.recv.cur_chunk_index++;
@@ -348,6 +361,12 @@ static int check_recv_complete(MPIR_Request * rreq)
     MPIDI_OFI_rndvread_t *p = &MPIDI_OFI_AMREQ_READ(rreq);
     if (p->u.recv.all_issued && p->u.recv.num_infly == 0 &&
         (!p->need_pack || p->u.recv.u.copy_infly == 0)) {
+        if (MPIDI_OFI_stats_on() && p->ts_rts > 0 && p->ts_first_read > 0) {
+            double now = MPIDI_OFI_stats_now();
+            MPIDI_OFI_rndv_stats.read_n++;
+            MPIDI_OFI_rndv_stats.read_ctl_wait += (p->ts_first_read - p->ts_rts);
+            MPIDI_OFI_rndv_stats.read_bulk += (now - p->ts_first_read);
+        }
         /* done. send ack */
         mpi_errno = MPIDI_OFI_RNDV_send_hdr(NULL, 0, p->av, p->vci_local, p->vci_remote,
                                             p->match_bits);

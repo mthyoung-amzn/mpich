@@ -7,7 +7,7 @@
 #include "ofi_impl.h"
 #include "ofi_rndv.h"
 
-#define MPIDI_OFI_PIPILINE_INFLY_CHUNKS 10
+#define MPIDI_OFI_PIPILINE_INFLY_CHUNKS 20
 
 struct send_chunk_req {
     char pad[MPIDI_REQUEST_HDR_SIZE];

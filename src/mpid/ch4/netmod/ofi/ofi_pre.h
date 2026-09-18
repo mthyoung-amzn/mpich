@@ -206,7 +206,12 @@ typedef struct {
     struct MPIDI_av_entry *av; \
     uint64_t match_bits; \
     /* only needed for sender to am_tag_send or replying probe */ \
-    int remote_rank
+    int remote_rank; \
+    /* INSTRUMENTATION-ONLY (ofi_rndv_stats): receiver-side timestamps. \
+     * ts_rts   = time RTS was received (recv_rndv_event) \
+     * ts_first_read = time the first fi_read was issued */ \
+    double ts_rts; \
+    double ts_first_read
 
 typedef struct {
     MPIDI_OFI_RNDV_COMMON_FIELDS;

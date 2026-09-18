@@ -7,6 +7,7 @@
 #include "ofi_am_events.h"
 #include "ofi_events.h"
 #include "ofi_rndv.h"
+#include "ofi_rndv_stats.h"
 
 #define MPIDI_OFI_CTS_FLAG__NONE   0
 #define MPIDI_OFI_CTS_FLAG__PROBE  1
@@ -155,17 +156,27 @@ int MPIDI_OFI_recv_rndv_event(int vci, struct fi_cq_tagged_entry *wc, MPIR_Reque
 
     switch (get_rndv_protocol(send_need_pack, recv_need_pack, p->data_sz)) {
         case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_pipeline:
+            MPIDI_OFI_stats_count(MPIDI_OFI_STAT_RNDV_PIPELINE, p->data_sz);
             mpi_errno = MPIDI_OFI_pipeline_recv(rreq, hdr.am_tag, vci_remote, vci_local);
             break;
         case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_read:
+            MPIDI_OFI_stats_count(MPIDI_OFI_STAT_RNDV_READ, p->data_sz);
+            if (MPIDI_OFI_stats_on()) {
+                /* start the control-wait clock: RTS is in hand, we are about to
+                 * post the recv-for-hdr and send CTS. */
+                p->ts_rts = MPIDI_OFI_stats_now();
+                p->ts_first_read = 0;
+            }
             mpi_errno = MPIDI_OFI_rndvread_recv(rreq, hdr.am_tag, vci_remote, vci_local);
             break;
         case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_write:
+            MPIDI_OFI_stats_count(MPIDI_OFI_STAT_RNDV_WRITE, p->data_sz);
             mpi_errno = MPIDI_OFI_rndvwrite_recv(rreq, hdr.am_tag, vci_remote, vci_local);
             break;
         case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_direct:
             /* fall through */
         default:
+            MPIDI_OFI_stats_count(MPIDI_OFI_STAT_RNDV_DIRECT, p->data_sz);
             mpi_errno = MPIDI_NM_am_tag_recv(rreq->status.MPI_SOURCE, rreq->comm,
                                              -1, hdr.am_tag,
                                              (void *) p->buf, p->count, p->datatype,

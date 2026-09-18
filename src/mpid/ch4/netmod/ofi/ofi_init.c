@@ -10,6 +10,7 @@
 #include "mpir_hwtopo.h"
 #include "ofi_csel_container.h"
 #include "ofi_init.h"
+#include "ofi_rndv_stats.h"
 
 /*
 === BEGIN_MPI_T_CVAR_INFO_BLOCK ===
@@ -611,6 +612,8 @@ int MPIDI_OFI_init_local(int *tag_bits)
 {
     int mpi_errno = MPI_SUCCESS;
 
+    MPIDI_OFI_stats_init();
+
     MPL_COMPILE_TIME_ASSERT(offsetof(struct MPIR_Request, dev.ch4.netmod) ==
                             offsetof(MPIDI_OFI_chunk_request, context));
     MPL_COMPILE_TIME_ASSERT(offsetof(struct MPIR_Request, dev.ch4.netmod) ==
@@ -889,6 +892,8 @@ int MPIDI_OFI_mpi_finalize_hook(void)
 {
     int mpi_errno = MPI_SUCCESS;
     int i = 0;
+
+    MPIDI_OFI_stats_report();
 
     MPIR_FUNC_ENTER;
 

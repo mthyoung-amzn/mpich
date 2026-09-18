@@ -7,6 +7,7 @@
 #define OFI_SEND_H_INCLUDED
 
 #include "ofi_impl.h"
+#include "ofi_rndv_stats.h"
 
 /*
 === BEGIN_MPI_T_CVAR_INFO_BLOCK ===
@@ -411,6 +412,7 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_OFI_send(const void *buf, MPI_Aint count, MPI
         mpi_errno = MPIDI_OFI_send_lightweight(send_buf, data_sz, cq_data, dst_rank, tag, comm,
                                                match_bits, addr,
                                                vci_src, vci_dst, sender_nic, receiver_nic);
+        MPIDI_OFI_stats_count(MPIDI_OFI_STAT_INJECT, data_sz);
         if (need_free_pack_buf) {
             MPL_free(pack_buf);
         }
@@ -504,6 +506,9 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_OFI_send(const void *buf, MPI_Aint count, MPI
                                           match_bits, addr, vci_src, vci_dst,
                                           sender_nic, receiver_nic, *request, attr, need_mr);
         MPIR_ERR_CHECK(mpi_errno);
+        if (!is_am) {
+            MPIDI_OFI_stats_count(MPIDI_OFI_STAT_EAGER, data_sz);
+        }
     }
 
   fn_exit:

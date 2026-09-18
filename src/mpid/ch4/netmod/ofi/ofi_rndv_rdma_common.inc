@@ -41,6 +41,7 @@ static int prepare_rdma_info(const void *buf, MPI_Datatype datatype, MPI_Aint da
     MPI_Aint chunks_per_nic = get_chunks_per_nic(data_sz, num_nics);
     MPI_Aint chunk_sz = MPIR_CVAR_CH4_OFI_PIPELINE_CHUNK_SZ;
     MPI_Aint sz_per_nic = chunks_per_nic * chunk_sz;
+    double mrreg_t0 = MPIDI_OFI_stats_on()? MPIDI_OFI_stats_now() : 0;
     for (int i = 0; i < num_nics; i++) {
         MPIDI_OFI_context_t *ctx = &MPIDI_OFI_global.ctx[MPIDI_OFI_get_ctx_index(vci, i)];
         /* note: fi_mr_reg is expensive, distribute over num_nics */
@@ -51,6 +52,10 @@ static int prepare_rdma_info(const void *buf, MPI_Datatype datatype, MPI_Aint da
         mpi_errno = MPIDI_OFI_mr_bind(MPIDI_OFI_global.prov_use[0], mrs[i], ctx->ep,
                                       NULL);
         MPIR_ERR_CHECK(mpi_errno);
+    }
+    if (MPIDI_OFI_stats_on()) {
+        MPIDI_OFI_rndv_stats.mrreg_n++;
+        MPIDI_OFI_rndv_stats.mrreg_time += (MPIDI_OFI_stats_now() - mrreg_t0);
     }
     if (MPIDI_OFI_ENABLE_MR_PROV_KEY) {
         for (int i = 0; i < num_nics; i++) {
