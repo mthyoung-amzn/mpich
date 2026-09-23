@@ -481,6 +481,14 @@ int MPIDI_OFI_dispatch_function(int vci, struct fi_cq_tagged_entry *wc, MPIR_Req
                 mpi_errno = MPIDI_OFI_rndvwrite_ack_event(wc, req);
                 break;
 
+            case MPIDI_OFI_EVENT_DIRECT_SEND_CHUNK:
+                mpi_errno = MPIDI_OFI_direct_send_chunk_event(wc, req);
+                break;
+
+            case MPIDI_OFI_EVENT_DIRECT_RECV_CHUNK:
+                mpi_errno = MPIDI_OFI_direct_recv_chunk_event(wc, req);
+                break;
+
             case MPIDI_OFI_EVENT_CHUNK_DONE:
                 mpi_errno = chunk_done_event(vci, wc, req);
                 break;

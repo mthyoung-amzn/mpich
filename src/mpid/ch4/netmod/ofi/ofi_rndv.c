@@ -58,6 +58,30 @@ static int get_rndv_protocol(bool send_need_pack, bool recv_need_pack, MPI_Aint 
     }
 }
 
+/* Single source of truth for whether a message uses the STRIPED direct data path
+ * (one maximal slice per NIC) versus the single-NIC AM tagged send/recv fallback.
+ *
+ * The sender arm (rndv_cts_event) and receiver arm (recv_rndv_event) live in
+ * different functions on different nodes and do NOT exchange which path they chose
+ * (no wire-protocol bit). They MUST agree, so both call THIS function and it is the
+ * ONLY place the decision is made -- no extra terms bolted on at the call sites.
+ *
+ * Every input is the SAME logical fact on both sides:
+ *   - send/recv need_pack: carried in the RTS match bits and the CTS flag.
+ *   - num_nics: the globally-agreed value (Allreduce'd at comm setup).
+ *   - data_sz: the SENDER's transfer length, or -1 if it did not fit the RTS cq_data
+ *     (so the receiver never learned it and cannot slice). Both sides produce the
+ *     SAME value: the receiver passes remote_data_sz (already -1 when unknown); the
+ *     sender passes its data_sz, or -1 when !CAN_SEND_CQ_DATASIZE -- i.e. exactly
+ *     what the receiver would have observed. The helper does the -1 test itself. */
+static bool direct_use_stripe(bool send_need_pack, bool recv_need_pack, MPI_Aint data_sz)
+{
+    return !send_need_pack && !recv_need_pack &&
+        MPIDI_OFI_global.num_nics > 1 &&
+        data_sz != -1 &&
+        data_sz < MPIDI_OFI_global.max_msg_size;
+}
+
 /* receiver -> sender */
 struct rndv_cts {
     MPIR_Request *rreq;
@@ -166,10 +190,18 @@ int MPIDI_OFI_recv_rndv_event(int vci, struct fi_cq_tagged_entry *wc, MPIR_Reque
         case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_direct:
             /* fall through */
         default:
-            mpi_errno = MPIDI_NM_am_tag_recv(rreq->status.MPI_SOURCE, rreq->comm,
-                                             -1, hdr.am_tag,
-                                             (void *) p->buf, p->count, p->datatype,
-                                             vci_remote, vci_local, rreq);
+            /* striped direct vs single-NIC AM: decided solely by direct_use_stripe
+             * so the two arms cannot drift. remote_data_sz is the sender's transfer
+             * length (or -1 if it did not ride the RTS cq_data); the helper treats
+             * -1 as "cannot stripe". */
+            if (direct_use_stripe(send_need_pack, recv_need_pack, p->remote_data_sz)) {
+                mpi_errno = MPIDI_OFI_direct_recv(rreq, hdr.am_tag, vci_remote, vci_local);
+            } else {
+                mpi_errno = MPIDI_NM_am_tag_recv(rreq->status.MPI_SOURCE, rreq->comm,
+                                                 -1, hdr.am_tag,
+                                                 (void *) p->buf, p->count, p->datatype,
+                                                 vci_remote, vci_local, rreq);
+            }
     }
     MPIR_ERR_CHECK(mpi_errno);
 
@@ -276,7 +308,15 @@ int MPIDI_OFI_rndv_cts_event(int vci, struct fi_cq_tagged_entry *wc, MPIR_Reques
             case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_direct:
                 /* fall through */
             default:
-                if (p->data_sz < MPIDI_OFI_global.max_msg_size) {
+                /* striped direct vs single-NIC AM: same shared predicate as the
+                 * receiver arm so the two cannot disagree. The sender materializes
+                 * the same value the receiver observes: its data_sz, or -1 when the
+                 * size did not fit the RTS cq_data (!CAN_SEND_CQ_DATASIZE). */
+                MPI_Aint stripe_data_sz =
+                    MPIDI_OFI_CAN_SEND_CQ_DATASIZE(p->data_sz) ? p->data_sz : -1;
+                if (direct_use_stripe(send_need_pack, recv_need_pack, stripe_data_sz)) {
+                    mpi_errno = MPIDI_OFI_direct_send(sreq, hdr->am_tag);
+                } else if (p->data_sz < MPIDI_OFI_global.max_msg_size) {
                     mpi_errno = MPIDI_NM_am_tag_send(p->remote_rank, sreq->comm, -1, hdr->am_tag,
                                                      p->buf, p->count, p->datatype,
                                                      p->vci_local, p->vci_remote, sreq);

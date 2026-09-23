@@ -318,6 +318,11 @@ typedef struct {
         struct iovec iov;
         void *inject_buf;       /* Internal buffer for inject emulation */
     } util;
+    /* striped direct: one maximal slice per NIC, num_nics tagged sends/recvs.
+     * Only these two must survive to completion; the split geometry and common
+     * fields are consumed at issue time. mrs is NULL when !need_mr. */
+    int chunks_remain;          /* completion countdown, starts at num_nics */
+    struct fid_mr **mrs;        /* per-NIC MRs to release at completion; NULL if !need_mr */
 } MPIDI_OFI_direct_t;
 
 typedef union {
