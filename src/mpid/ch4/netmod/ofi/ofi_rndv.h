@@ -25,6 +25,9 @@ cvars:
         read - RDMA read.
         write - RDMA write.
         direct - direct send data using libfabric after the RNDV handshake.
+        stripe - split a contiguous message into one maximal slice per NIC and
+                 send them as num_nics tagged sends after the RNDV handshake
+                 (send-based multi-rail striping; contiguous data only).
     - name        : MPIR_CVAR_CH4_OFI_RNDV_GPU_PACK
       category    : CH4_OFI
       type        : boolean
@@ -37,7 +40,7 @@ cvars:
         host-staged (packed) because MPIDI_OFI_rndv_need_pack folds device memory
         into the pack decision. Set this to false to keep contiguous device buffers
         off the pack path so they can be sent GPU-direct (GDR) -- which lets the
-        read/write/direct movers register and stripe the device buffer per NIC
+        read/write/stripe movers register and stripe the device buffer per NIC
         instead of bouncing it through host memory. Non-contiguous data always packs
         regardless of this setting.
 === END_MPI_T_CVAR_INFO_BLOCK ===
@@ -49,8 +52,8 @@ int MPIDI_OFI_rndvread_send(MPIR_Request * sreq, int tag);
 int MPIDI_OFI_rndvread_recv(MPIR_Request * rreq, int tag, int vci_src, int vci_dst);
 int MPIDI_OFI_rndvwrite_send(MPIR_Request * sreq, int tag);
 int MPIDI_OFI_rndvwrite_recv(MPIR_Request * rreq, int tag, int vci_src, int vci_dst);
-int MPIDI_OFI_direct_send(MPIR_Request * sreq, int tag);
-int MPIDI_OFI_direct_recv(MPIR_Request * rreq, int tag, int vci_src, int vci_dst);
+int MPIDI_OFI_stripe_send(MPIR_Request * sreq, int tag);
+int MPIDI_OFI_stripe_recv(MPIR_Request * rreq, int tag, int vci_src, int vci_dst);
 
 typedef struct {
     char pad[MPIDI_REQUEST_HDR_SIZE];
