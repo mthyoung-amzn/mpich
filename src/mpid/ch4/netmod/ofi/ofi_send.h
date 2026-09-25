@@ -430,7 +430,7 @@ MPL_STATIC_INLINE_PREFIX int MPIDI_OFI_send(const void *buf, MPI_Aint count, MPI
         p->buf = buf;
         p->count = count;
         p->datatype = datatype;
-        p->need_pack = MPIDI_OFI_rndv_need_pack(dt_contig, &attr);
+        p->need_pack = MPIDI_OFI_rndv_need_pack(dt_contig, data_sz, &attr);
         p->attr = attr;
         p->data_sz = data_sz;
         p->vci_local = vci_src;

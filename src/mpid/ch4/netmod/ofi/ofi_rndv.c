@@ -33,6 +33,19 @@ static int get_rndv_protocol(bool send_need_pack, bool recv_need_pack, MPI_Aint 
                 return MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_write;
             }
             break;
+        case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_stripe:
+            /* Send-based multi-rail striping. Eligible for any contiguous buffer (no
+             * pack either side) with more than one rail. stripe does NOT depend on
+             * the transfer length being known at selection time -- it runs its own
+             * unconditional datasize handshake, so it works uniformly on every
+             * provider (including EFA, cq_data_size==4). Per-NIC slices are
+             * data_sz/num_nics <= data_sz, so they never exceed what a single direct
+             * tsend could carry. */
+            if (!send_need_pack && !recv_need_pack &&
+                recv_data_sz < MPIDI_OFI_global.max_msg_size) {
+                return MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_stripe;
+            }
+            break;
         case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_direct:
             /* libfabric can't direct send > max_msg_size. Only sender knows both sizes from
              * receiving CTS, thus we use recv_data_sz so both sides can agree.
@@ -51,6 +64,10 @@ static int get_rndv_protocol(bool send_need_pack, bool recv_need_pack, MPI_Aint 
         return MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_write;
     } else if (recv_need_pack) {
         return MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_read;
+    } else if (!send_need_pack && !recv_need_pack &&
+               MPIDI_OFI_global.num_nics > 1 &&
+               recv_data_sz < MPIDI_OFI_global.max_msg_size) {
+        return MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_stripe;
     } else if (recv_data_sz < MPIDI_OFI_global.max_msg_size) {
         return MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_direct;
     } else {
@@ -121,7 +138,7 @@ int MPIDI_OFI_recv_rndv_event(int vci, struct fi_cq_tagged_entry *wc, MPIR_Reque
     p->buf = buf;
     p->count = count;
     p->datatype = datatype;
-    p->need_pack = MPIDI_OFI_rndv_need_pack(dt_contig, &attr);
+    p->need_pack = MPIDI_OFI_rndv_need_pack(dt_contig, data_sz, &attr);
     p->attr = attr;
     p->data_sz = data_sz;
     p->vci_local = vci_local;
@@ -153,6 +170,8 @@ int MPIDI_OFI_recv_rndv_event(int vci, struct fi_cq_tagged_entry *wc, MPIR_Reque
         hdr.flag |= MPIDI_OFI_CTS_FLAG__NEED_PACK;
     }
 
+    /* stripe is size-independent (it runs its own datasize handshake); direct/read
+     * still key on the posted size, matching upstream. */
     switch (get_rndv_protocol(send_need_pack, recv_need_pack, p->data_sz)) {
         case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_pipeline:
             mpi_errno = MPIDI_OFI_pipeline_recv(rreq, hdr.am_tag, vci_remote, vci_local);
@@ -163,9 +182,13 @@ int MPIDI_OFI_recv_rndv_event(int vci, struct fi_cq_tagged_entry *wc, MPIR_Reque
         case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_write:
             mpi_errno = MPIDI_OFI_rndvwrite_recv(rreq, hdr.am_tag, vci_remote, vci_local);
             break;
+        case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_stripe:
+            mpi_errno = MPIDI_OFI_stripe_recv(rreq, hdr.am_tag, vci_remote, vci_local);
+            break;
         case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_direct:
             /* fall through */
         default:
+            /* direct: one single-NIC AM tagged recv of the whole buffer. */
             mpi_errno = MPIDI_NM_am_tag_recv(rreq->status.MPI_SOURCE, rreq->comm,
                                              -1, hdr.am_tag,
                                              (void *) p->buf, p->count, p->datatype,
@@ -273,9 +296,13 @@ int MPIDI_OFI_rndv_cts_event(int vci, struct fi_cq_tagged_entry *wc, MPIR_Reques
             case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_write:
                 mpi_errno = MPIDI_OFI_rndvwrite_send(sreq, hdr->am_tag);
                 break;
+            case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_stripe:
+                mpi_errno = MPIDI_OFI_stripe_send(sreq, hdr->am_tag);
+                break;
             case MPIR_CVAR_CH4_OFI_RNDV_PROTOCOL_direct:
                 /* fall through */
             default:
+                /* direct: one single-NIC AM tagged send of the whole buffer. */
                 if (p->data_sz < MPIDI_OFI_global.max_msg_size) {
                     mpi_errno = MPIDI_NM_am_tag_send(p->remote_rank, sreq->comm, -1, hdr->am_tag,
                                                      p->buf, p->count, p->datatype,

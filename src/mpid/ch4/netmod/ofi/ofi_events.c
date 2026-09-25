@@ -481,6 +481,22 @@ int MPIDI_OFI_dispatch_function(int vci, struct fi_cq_tagged_entry *wc, MPIR_Req
                 mpi_errno = MPIDI_OFI_rndvwrite_ack_event(wc, req);
                 break;
 
+            case MPIDI_OFI_EVENT_STRIPE_RECV_DATASIZE:
+                mpi_errno = MPIDI_OFI_stripe_recv_datasize_event(wc, req);
+                break;
+
+            case MPIDI_OFI_EVENT_STRIPE_SEND_POSTED_ACK:
+                mpi_errno = MPIDI_OFI_stripe_send_posted_ack_event(wc, req);
+                break;
+
+            case MPIDI_OFI_EVENT_STRIPE_SEND_CHUNK:
+                mpi_errno = MPIDI_OFI_stripe_send_chunk_event(wc, req);
+                break;
+
+            case MPIDI_OFI_EVENT_STRIPE_RECV_CHUNK:
+                mpi_errno = MPIDI_OFI_stripe_recv_chunk_event(wc, req);
+                break;
+
             case MPIDI_OFI_EVENT_CHUNK_DONE:
                 mpi_errno = chunk_done_event(vci, wc, req);
                 break;

@@ -25,6 +25,8 @@ cvars:
         read - RDMA read.
         write - RDMA write.
         direct - direct send data using libfabric after the RNDV handshake.
+        stripe - split a contiguous message into one maximal slice per NIC and
+                 send them as num_nics tagged sends
 === END_MPI_T_CVAR_INFO_BLOCK ===
 */
 
@@ -34,6 +36,8 @@ int MPIDI_OFI_rndvread_send(MPIR_Request * sreq, int tag);
 int MPIDI_OFI_rndvread_recv(MPIR_Request * rreq, int tag, int vci_src, int vci_dst);
 int MPIDI_OFI_rndvwrite_send(MPIR_Request * sreq, int tag);
 int MPIDI_OFI_rndvwrite_recv(MPIR_Request * rreq, int tag, int vci_src, int vci_dst);
+int MPIDI_OFI_stripe_send(MPIR_Request * sreq, int tag);
+int MPIDI_OFI_stripe_recv(MPIR_Request * rreq, int tag, int vci_src, int vci_dst);
 
 typedef struct {
     char pad[MPIDI_REQUEST_HDR_SIZE];

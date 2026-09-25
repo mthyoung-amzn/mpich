@@ -320,18 +320,30 @@ typedef struct {
     } util;
 } MPIDI_OFI_direct_t;
 
+/* the "stripe" protocol: one maximal slice per NIC, num_nics tagged sends/recvs.
+ * Only these survive to completion; the split geometry and remaining common fields
+ * are consumed at issue time. datatype is inherited from the common fields (released
+ * at completion). mrs is NULL when !need_mr. */
+typedef struct {
+    MPIDI_OFI_RNDV_COMMON_FIELDS;
+    int chunks_remain;          /* completion countdown, starts at num_nics */
+    struct fid_mr **mrs;        /* per-NIC MRs to release at completion; NULL if !need_mr */
+} MPIDI_OFI_stripe_t;
+
 typedef union {
     MPIDI_OFI_direct_t direct;
     MPIDI_OFI_rndv_common_t common;
     MPIDI_OFI_pipeline_t pipeline;
     MPIDI_OFI_rndvread_t read;
     MPIDI_OFI_rndvwrite_t write;
+    MPIDI_OFI_stripe_t stripe;
 } MPIDI_OFI_request_t;
 
 #define MPIDI_OFI_AMREQ_COMMON(req)   ((req)->dev.ch4.netmod.ofi.common)
 #define MPIDI_OFI_AMREQ_PIPELINE(req) ((req)->dev.ch4.netmod.ofi.pipeline)
 #define MPIDI_OFI_AMREQ_READ(req)     ((req)->dev.ch4.netmod.ofi.read)
 #define MPIDI_OFI_AMREQ_WRITE(req)    ((req)->dev.ch4.netmod.ofi.write)
+#define MPIDI_OFI_AMREQ_STRIPE(req)   ((req)->dev.ch4.netmod.ofi.stripe)
 
 typedef struct {
     int index;
